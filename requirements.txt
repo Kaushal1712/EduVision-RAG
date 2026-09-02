@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────
+# EduVision RAG — Python Dependencies
+# ─────────────────────────────────────────────────────────────
+# Install with:  pip install -r requirements.txt
+#
+# All versions are pinned to the environment verified at Stage 15
+# (17/17 PASS on the full evaluation suite).
+#
+# Note: FFmpeg is a system binary — install separately:
+#   macOS:  brew install ffmpeg
+#   Linux:  sudo apt install ffmpeg
+#
+# Sections follow the pipeline stages for traceability.
+# ─────────────────────────────────────────────────────────────
+
+# ── Environment ───────────────────────────────────────────────
+python-dotenv==1.2.3          # load .env into os.environ
+
+# ── Stage 3 — Whisper transcription ──────────────────────────
+openai-whisper==20250625      # OpenAI Whisper for timestamped ASR (base + medium)
+torch==2.13.0                 # PyTorch backend for Whisper and FlagEmbedding
+
+# ── Stage 6 — BGE-M3 embeddings ──────────────────────────────
+FlagEmbedding==1.4.2          # BGE-M3 from BAAI (multilingual dense retrieval)
+numpy==2.5.2                  # array ops used by embeddings
+
+# ── Stage 7 — Vector database ────────────────────────────────
+chromadb==1.5.9               # Persistent local vector store (cosine similarity)
+
+# ── Stage 10 — OpenAI LLM ────────────────────────────────────
+# openai 3.5.0 ships the v1.x client API (openai.OpenAI, client.chat.completions).
+# This is NOT the legacy 0.x API. Pin exactly — the SDK interface changed
+# significantly between 0.x, 1.x, and 3.x series.
+openai==3.5.0                 # OpenAI Python SDK (v1.x client API)
+
+# ── Stage 11 — Streamlit UI ──────────────────────────────────
+streamlit==1.62.0
+
+# ── Utilities ─────────────────────────────────────────────────
+tqdm==4.70.0                  # progress bars for long ingestion jobs

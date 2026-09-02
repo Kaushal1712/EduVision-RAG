@@ -1,0 +1,51 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.so
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Environment / Secrets ─────────────────────────────────────────────────────
+.env
+*.env
+
+# ── Data (generated, large, or sensitive) ────────────────────────────────────
+data/transcripts/
+data/processed/
+data/vector_db/
+
+# ── Videos (large binary files) ──────────────────────────────────────────────
+videos/
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Build / Distribution ──────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+
+# ── Generated evaluation output ───────────────────────────────────────────────
+# Created by eval/evaluate.py and eval/eval_followup.py on every run.
+# Ignored to keep the working tree clean; results are verified manually.
+eval/evaluation_results*.json
