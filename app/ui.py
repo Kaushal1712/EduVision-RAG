@@ -204,20 +204,24 @@ def _load_pipeline():
 
     Returns (ask_fn, search_fn, health_check_fn, status)
     """
-    from pipeline import ask, search, health_check
+    from pipeline import ask, search, health_check, list_indexed_videos
     status = health_check()
-    return ask, search, health_check, status
+    return ask, search, health_check, status, list_indexed_videos
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _short_video_name(filename: str) -> str:
-    """Convert full video filename to a short display label."""
-    if "Tutorial #1" in filename or "tutorial_1" in filename.lower() or "01_" in filename:
-        return "Tutorial #1"
-    if "Tutorial #2" in filename or "tutorial_2" in filename.lower() or "02_" in filename:
-        return "Tutorial #2"
-    return filename.split("|")[0].strip()[:40]
+    """Convert full video filename to a short display label (e.g. 'Tutorial #3')."""
+    import re as _re
+    # Strip .mp4 extension if present
+    name = _re.sub(r'\.mp4$', '', filename, flags=_re.IGNORECASE)
+    # Extract leading number (handles both filenames like '03_basic...' and display names)
+    m = _re.match(r'^(\d+)[_\s]', name)
+    if m:
+        return f"Tutorial #{int(m.group(1))}"
+    # Fallback: strip course boilerplate after | or ｜
+    return _re.split(r'\s*[|｜]\s*', name)[0].strip()[:40] or filename[:40]
 
 
 def _sim_color_class(similarity: float) -> str:
@@ -354,11 +358,12 @@ def _render_sidebar(status):
 
         st.divider()
 
-        # Video filter
+        # Video filter — options built dynamically from ChromaDB metadata
         st.markdown("**Filter by Video**")
+        _vid_options = ["All Videos"] + [label for _, label in st.session_state.get("_video_catalogue", [])]
         video_filter = st.radio(
             label="video_filter_radio",
-            options=["All Videos", "Tutorial #1 — Installing VS Code", "Tutorial #2 — Your First HTML Website"],
+            options=_vid_options,
             label_visibility="collapsed",
         )
         st.session_state.video_filter = video_filter
@@ -464,10 +469,10 @@ def _render_chat_tab(ask_fn, video_filter: str):
     if query:
         # Determine video_id_filter from sidebar selection
         video_id_filter = None
-        if "Tutorial #1" in video_filter:
-            video_id_filter = "01_installing_vs_code_how_websites_work_sigma_web_development_course_tutorial_1"
-        elif "Tutorial #2" in video_filter:
-            video_id_filter = "02_your_first_html_website_sigma_web_development_course_tutorial_2"
+        if video_filter != "All Videos":
+            _catalogue = st.session_state.get("_video_catalogue", [])
+            _label_to_id = {label: vid_id for vid_id, label in _catalogue}
+            video_id_filter = _label_to_id.get(video_filter)
 
         # Snapshot history BEFORE appending the current user turn —
         # these are the prior turns the generator uses for follow-up context.
@@ -567,10 +572,10 @@ Useful for exploring what the videos cover and verifying timestamps.
 
     if (search_clicked or auto_submit) and search_query:
         video_id_filter = None
-        if "Tutorial #1" in video_filter:
-            video_id_filter = "01_installing_vs_code_how_websites_work_sigma_web_development_course_tutorial_1"
-        elif "Tutorial #2" in video_filter:
-            video_id_filter = "02_your_first_html_website_sigma_web_development_course_tutorial_2"
+        if video_filter != "All Videos":
+            _catalogue = st.session_state.get("_video_catalogue", [])
+            _label_to_id = {label: vid_id for vid_id, label in _catalogue}
+            video_id_filter = _label_to_id.get(video_filter)
 
         with st.spinner("Searching..."):
             results = search_fn(search_query, video_id_filter=video_id_filter)
@@ -624,7 +629,11 @@ def main():
 
     # Load pipeline (cached after first call)
     with st.spinner("Loading EduVision RAG pipeline..."):
-        ask_fn, search_fn, health_check_fn, status = _load_pipeline()
+        ask_fn, search_fn, health_check_fn, status, list_videos_fn = _load_pipeline()
+
+    # Build video catalogue once per session (cached in session_state)
+    if "_video_catalogue" not in st.session_state:
+        st.session_state._video_catalogue = list_videos_fn()
 
     # Sidebar
     _render_sidebar(status)

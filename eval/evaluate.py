@@ -72,7 +72,7 @@ EVAL_QUERIES = [
         "id":       "B1",
         "category": "WHAT",
         "query":    "What is HTML and what is it used for?",
-        "expect_video": "Tutorial #2",
+        "expect_video": ["10_Video", "11_Semantic", "02_", "Tutorial #2"],
         "expect_ts_before": None,
         "notes":    "Must explain HTML from transcript evidence, not from general knowledge",
     },
@@ -80,7 +80,7 @@ EVAL_QUERIES = [
         "id":       "B2",
         "category": "WHAT",
         "query":    "What is CSS used for?",
-        "expect_video": "Tutorial #2",
+        "expect_video": ["14_Introduction to CSS", "15_Inline", "17_CSS", "02_", "Tutorial #2"],
         "expect_ts_before": None,
         "notes":    "CSS for styling mentioned in Tutorial #2",
     },
@@ -184,7 +184,7 @@ EVAL_QUERIES = [
         "id":       "F3",
         "category": "EDGE",
         "query":    "html",
-        "expect_video": "Tutorial #2",
+        "expect_video": ["02_", "10_Video", "11_Semantic", "15_Inline", "Tutorial #2"],
         "expect_ts_before": None,
         "notes":    "Single keyword — should still retrieve relevant chunks",
     },
@@ -245,12 +245,20 @@ def score_result(tc: dict, result) -> tuple[str, str]:
     expected_vid = tc.get("expect_video")
     if expected_vid:
         vids_used = [s.video_filename for s in result.sources_used]
-        correct_vid = any(expected_vid.lower() in v.lower() or
-                          (expected_vid == "Tutorial #1" and ("01_" in v or "#1" in v)) or
-                          (expected_vid == "Tutorial #2" and ("02_" in v or "#2" in v))
-                          for v in vids_used)
+        # Support both str (legacy) and list (multi-acceptable) for expect_video.
+        keywords = expected_vid if isinstance(expected_vid, list) else [expected_vid]
+        def _vid_matches(keyword: str, filename: str) -> bool:
+            kl, fl = keyword.lower(), filename.lower()
+            if kl in fl:
+                return True
+            if keyword == "Tutorial #1" and ("01_" in filename or "#1" in filename):
+                return True
+            if keyword == "Tutorial #2" and ("02_" in filename or "#2" in filename):
+                return True
+            return False
+        correct_vid = any(_vid_matches(kw, v) for kw in keywords for v in vids_used)
         if not correct_vid:
-            return "WEAK", f"Expected {expected_vid!r} but got: {[v[:30] for v in vids_used[:2]]}"
+            return "WEAK", f"Expected any of {keywords} but got: {[v[:30] for v in vids_used[:2]]}"
 
     # Check timestamp is before expected bound.
     # Pass if ANY top source is within the bound — the correct content
@@ -314,7 +322,10 @@ def run_evaluation():
         if result.sources_used:
             print(f"    Sources:")
             for s in result.sources_used[:3]:
-                vid = "T1" if "01_" in s.video_filename else "T2"
+                # Derive a short label from the tutorial number in the filename (e.g. "T3", "T14")
+                import re as _re
+                _m = _re.search(r'_(\d+)[_.]', s.video_filename)
+                vid = f"T{_m.group(1)}" if _m else s.video_filename[:6]
                 print(f"      [{vid} {s.start_time_fmt}→{s.end_time_fmt}] sim={s.similarity:.3f}  "
                       f"{s.text[:60]}...")
 
@@ -365,12 +376,31 @@ def run_evaluation():
     import chromadb, json as _json
     from chromadb.config import Settings as CS
     col = chromadb.PersistentClient(path="data/vector_db",
-                                    settings=CS(anonymized_telemetry=False)).get_collection("eduvision_chunks")
-    chroma_ok = col.count() == 235
-    segs_ok   = (len(_json.load(open("data/transcripts/01_installing_vs_code_how_websites_work_sigma_web_development_course_tutorial_1_cleaned.json"))["segments"]) == 263 and
-                 len(_json.load(open("data/transcripts/02_your_first_html_website_sigma_web_development_course_tutorial_2_cleaned.json"))["segments"]) == 649)
-    print(f"  Source integrity: ChromaDB=235 {'✅' if chroma_ok else '❌'}  "
-          f"cleaned JSONs {'✅' if segs_ok else '❌'}")
+                                    settings=CS(anonymized_telemetry=False)).get_collection("eduvision_chunks_v2")
+    chroma_ok = col.count() == 1510
+
+    # Dynamically discover all cleaned transcript JSONs and verify each loads correctly
+    _TRANSCRIPTS_DIR = Path("data/transcripts")
+    _cleaned_files = sorted(_TRANSCRIPTS_DIR.glob("*_cleaned.json"))
+    _cleaned_ok, _cleaned_bad = [], []
+    for _cf in _cleaned_files:
+        try:
+            _d = _json.load(open(_cf, encoding="utf-8"))
+            if _d.get("segments"):
+                _cleaned_ok.append(_cf.name)
+            else:
+                _cleaned_bad.append(f"{_cf.name} (empty segments)")
+        except Exception as _e:
+            _cleaned_bad.append(f"{_cf.name} ({_e})")
+    _n_ok, _n_total = len(_cleaned_ok), len(_cleaned_ok) + len(_cleaned_bad)
+    segs_ok = (_n_total == 18 and not _cleaned_bad)
+    if segs_ok:
+        cleaned_label = f"cleaned JSONs={_n_ok}/18 ✅"
+    else:
+        _bad_summary = ", ".join(_cleaned_bad[:3]) + ("..." if len(_cleaned_bad) > 3 else "")
+        cleaned_label = f"cleaned JSONs={_n_ok}/{_n_total} ❌  bad: {_bad_summary}"
+
+    print(f"  Source integrity: ChromaDB=1510 {'✅' if chroma_ok else '❌'}  {cleaned_label}")
 
     # Save results
     out_path = Path("eval/evaluation_results.json")

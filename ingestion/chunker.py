@@ -467,12 +467,20 @@ if __name__ == "__main__":
         # The last segment_id of chunk N should be the first of chunk N+1
         # if overlap=1 and no gap-break intervenes.
         overlaps = 0
+        skipped  = 0
         for k in range(len(chunks) - 1):
-            last_id  = chunks[k].source_segment_ids[-1]
-            first_id_next = chunks[k+1].source_segment_ids[0]
-            if last_id >= first_id_next:
+            ids_cur  = chunks[k].source_segment_ids
+            ids_next = chunks[k + 1].source_segment_ids
+            if not ids_cur or not ids_next:
+                # Chunk has no segment IDs (e.g. loaded from a pre-v2 pipeline);
+                # cannot compare — skip to avoid IndexError.
+                skipped += 1
+                continue
+            if ids_cur[-1] >= ids_next[0]:
                 overlaps += 1
-        print(f"\n  Overlap check: {overlaps}/{len(chunks)-1} consecutive chunk pairs share a segment")
+        checked   = (len(chunks) - 1) - skipped
+        skip_note = f"  ({skipped} pairs skipped — no segment IDs)" if skipped else ""
+        print(f"\n  Overlap check: {overlaps}/{checked} consecutive chunk pairs share a segment{skip_note}")
 
         # ── Representative chunks ─────────────────────────────────────────────
         print(f"\n  ── 5 representative chunks ──")

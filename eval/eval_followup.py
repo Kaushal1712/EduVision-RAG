@@ -68,7 +68,7 @@ FOLLOWUP_TESTS = [
         "turn2_query": "why is it important?",
         "turn2_expect_found": True,
         "turn2_require_keywords": ["html"],
-        "turn2_expect_video":    "Tutorial #2",
+        "turn2_expect_video":    ["10_Video", "11_Semantic", "13_"],
         "notes": (
             "The query rewriter should resolve 'it' to HTML. "
             "The generator should either retrieve evidence about HTML importance "
@@ -112,7 +112,7 @@ FOLLOWUP_TESTS = [
         "turn2_query": "what is CSS?",
         "turn2_expect_found": True,
         "turn2_require_keywords": ["css"],
-        "turn2_expect_video":    "Tutorial #2",
+        "turn2_expect_video":    ["14_Introduction to CSS", "15_Inline", "17_CSS"],
         "notes": (
             "'what is CSS?' is already self-contained — no pronouns. "
             "The rewriter should return it unchanged. "
@@ -154,14 +154,25 @@ def _build_history(turn1_query: str, turn1_answer: str) -> list:
     ]
 
 
-def _video_matches(expected: str, sources: list) -> bool:
-    """Return True if any source filename matches the expected video label."""
+def _video_matches(expected, sources: list) -> bool:
+    """
+    Return True if any source filename matches the expected video label.
+
+    expected may be:
+      str  — a single label ('Tutorial #1', 'Tutorial #2', or a filename fragment)
+      list — multiple acceptable labels; passes if ANY keyword matches ANY source
+    """
+    keywords = expected if isinstance(expected, list) else [expected]
     for s in sources:
         fn = s.video_filename.lower()
-        if expected == "Tutorial #1" and ("01_" in fn or "tutorial_1" in fn):
-            return True
-        if expected == "Tutorial #2" and ("02_" in fn or "tutorial_2" in fn):
-            return True
+        for kw in keywords:
+            kl = kw.lower()
+            if kl in fn:
+                return True
+            if kw == "Tutorial #1" and ("01_" in fn or "tutorial_1" in fn):
+                return True
+            if kw == "Tutorial #2" and ("02_" in fn or "tutorial_2" in fn):
+                return True
     return False
 
 

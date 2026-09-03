@@ -47,12 +47,6 @@ logger = logging.getLogger(__name__)
 # ── V2 collection name (v1 is never touched) ──────────────────────────────────
 CHROMA_COLLECTION_NAME_V2 = "eduvision_chunks_v2"
 
-# ── Known video IDs ───────────────────────────────────────────────────────────
-VIDEO_IDS = [
-    "01_installing_vs_code_how_websites_work_sigma_web_development_course_tutorial_1",
-    "02_your_first_html_website_sigma_web_development_course_tutorial_2",
-]
-
 # ── Batch size for Chroma upserts ─────────────────────────────────────────────
 INDEX_BATCH_SIZE = 50
 
@@ -98,11 +92,33 @@ def main(force: bool = False) -> None:
             print(f"  Use --force to rebuild. Exiting.")
             return
 
-    # ── Step 1: Load all chunks ───────────────────────────────────────────────
-    print("── Step 1: Loading v1 chunks ────────────────────────────────────")
+    # ── Step 1: Discover and load all processed chunks + embeddings ─────────
+    print("── Step 1: Discovering processed videos ──────────────────────────")
+    chunk_files = sorted((PROCESSED_DIR / "chunks").glob("*_chunks.json"))
+    if not chunk_files:
+        logger.error(
+            "No chunk files found in %s. Run Stages 2–6 (video_processor, "
+            "transcriber, cleaner, chunker, embedder) first.",
+            PROCESSED_DIR / "chunks",
+        )
+        return
+
+    # Read video_id from each chunk file's metadata header — same pattern as indexer.py
+    video_ids = []
+    for cf in chunk_files:
+        with open(cf, encoding="utf-8") as fh:
+            meta = json.load(fh)
+        video_ids.append(meta["video_id"])
+
+    print(f"  Discovered {len(video_ids)} processed video(s):")
+    for vid in video_ids:
+        print(f"    {vid[:70]}")
+    print()
+
+    print("── Step 1b: Loading chunks and embeddings ────────────────────────")
     all_chunks = []
     all_embeddings = {}
-    for vid in VIDEO_IDS:
+    for vid in video_ids:
         chunks = load_chunks(vid)
         if not chunks:
             logger.error("No chunks found for %s. Run Stage 5 first.", vid)
@@ -110,7 +126,7 @@ def main(force: bool = False) -> None:
         embs = _load_embeddings_v1(vid)
         all_chunks.extend(chunks)
         all_embeddings.update(embs)
-        print(f"  {vid[:50]}: {len(chunks)} chunks, {len(embs)} embeddings")
+        print(f"  {vid[:55]}: {len(chunks)} chunks, {len(embs)} embeddings")
 
     print(f"\n  Total: {len(all_chunks)} chunks, {len(all_embeddings)} embeddings\n")
 

@@ -111,7 +111,8 @@ MAX_QUERY_LENGTH = 500
 # pronouns and demonstratives are included so ambiguous follow-ups are never
 # silently passed through without rewriting.
 _FOLLOWUP_RE = re.compile(
-    r"\b(it|its|this|that|these|those|they|them|their|he|she|her|his)\b",
+    r"\b(it|its|this|that|these|those|they|them|their|he|she|her|his"
+    r"|the video|the tutorial)\b",
     re.IGNORECASE,
 )
 
@@ -541,6 +542,64 @@ def search(
     except Exception as exc:
         logger.exception("search() retrieval failed: %s", exc)
         return []
+
+
+# ── Video catalogue ───────────────────────────────────────────────────────────
+
+def list_indexed_videos() -> list[tuple[str, str]]:
+    """
+    Return a sorted list of (video_id, display_label) for every distinct video
+    currently indexed in the active ChromaDB v2 collection.
+
+    display_label format: "Tutorial #N — <Human Title>"
+    e.g.  "Tutorial #3 — Basic Structure of an HTML Website"
+
+    The label is derived entirely from ChromaDB metadata — no hardcoded list.
+    Returns an empty list if ChromaDB is unavailable.
+    """
+    import re as _re
+    try:
+        from ingestion.indexer import get_chroma_client
+        client = get_chroma_client()
+        col = client.get_collection(name=ACTIVE_COLLECTION)
+        # Fetch only metadatas (no embeddings / documents needed)
+        all_meta = col.get(include=["metadatas"])["metadatas"]
+    except Exception as exc:
+        logger.warning("list_indexed_videos: ChromaDB unavailable — %s", exc)
+        return []
+
+    # Collect distinct (video_id, video_filename) pairs
+    seen: dict[str, str] = {}
+    for m in all_meta:
+        vid_id = m.get("video_id", "")
+        vid_fn = m.get("video_filename", "")
+        if vid_id and vid_id not in seen:
+            seen[vid_id] = vid_fn
+
+    def _make_label(video_id: str, video_filename: str) -> str:
+        # Extract leading number from video_id (e.g. "03_basic_structure..." → 3)
+        num_match = _re.match(r"^(\d+)_", video_id)
+        num = int(num_match.group(1)) if num_match else 0
+
+        # Build human title from video_filename by stripping the number prefix,
+        # the course suffix ("Sigma Web Development..."), and the .mp4 extension.
+        title = video_filename
+        # Remove .mp4 / .MP4
+        title = _re.sub(r"\.mp4$", "", title, flags=_re.IGNORECASE)
+        # Remove leading "NN_" or "NN " prefix
+        title = _re.sub(r"^\d+[_\s]+", "", title)
+        # Remove trailing course boilerplate after " | " or " ｜ "
+        title = _re.split(r"\s*[|｜]\s*", title)[0].strip()
+        # Collapse whitespace
+        title = " ".join(title.split())
+        if not title:
+            title = video_id
+
+        return f"Tutorial #{num} — {title}"
+
+    # Sort by tutorial number
+    items = sorted(seen.items(), key=lambda kv: int((_re.match(r"^(\d+)_", kv[0]) or _re.match(r"(0)", "0")).group(1)))
+    return [(vid_id, _make_label(vid_id, vid_fn)) for vid_id, vid_fn in items]
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

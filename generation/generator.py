@@ -187,6 +187,9 @@ Rules you MUST follow:
    answer the question, respond with exactly:
    "I could not find this topic in the provided course material."
    Do not add anything else when you use this phrase.
+   Note: if the query is a bare topic or keyword (e.g. "HTML", "CSS", "flexbox"), treat
+   it as a request to explain or summarise that topic. If the Evidence covers it, answer
+   normally with citations — do not return the not-found phrase just because the query is short.
 4. Never invent information. Never use general knowledge outside the provided evidence
    and prior context.
 5. Keep your answer focused and clear \u2014 2 to 5 sentences unless more detail is truly needed.
