@@ -61,7 +61,8 @@ EduVision RAG/
 │   ├── processed/             ← Cleaned chunks + normalizer cache (gitignored)
 │   └── vector_db/             ← ChromaDB persistence directory (gitignored)
 ├── eval/
-│   └── evaluate.py            ← 17-question evaluation suite (single-turn)
+│   ├── evaluate.py            ← 17-question single-turn evaluation suite
+│   └── eval_followup.py       ← 5-case two-turn follow-up evaluation suite
 ├── generation/
 │   └── generator.py           ← Stage 9: GPT-4o-mini grounded answer generation
 ├── ingestion/
@@ -230,14 +231,19 @@ The project includes a 17-question evaluation suite in `eval/evaluate.py` coveri
 | **OUT-OF-SCOPE** | Topics not in corpus → must refuse without hallucinating | 3 |
 | **EDGE** | Empty, too-short, or nonsense queries → graceful rejection | 3 |
 
-**Current result: 17/17 PASS** on the 2-video corpus (Tutorial #1 and Tutorial #2).
+**Verified results on the 18-video corpus (1,510 indexed chunks):**
+
+| Suite | Cases | Result |
+|---|---|---|
+| Single-turn (`eval/evaluate.py`) | 17 queries | **17/17 PASS** |
+| Follow-up (`eval/eval_followup.py`) | 5 two-turn cases | **5/5 PASS** |
 
 ---
 
 ## Current Scope & Limitations
 
 - **Local videos only** — the Go to Timestamp player requires `.mp4` files in the `videos/` directory; YouTube URLs are not supported
-- **2-video corpus** — the current index covers Tutorial #1 (Installing VS Code) and Tutorial #2 (Your First HTML Website); adding more videos requires re-running ingestion
+- **18-video corpus** — the current index covers Tutorials #1–#18 of the Sigma Web Development Course (HTML + CSS), totalling 1,510 quality-filtered, English-normalised chunks across 18 videos; adding further videos requires re-running the ingestion pipeline
 - **English output** — all answers are generated in English; source cards display `text_en` regardless of the original video language
 - **OpenAI dependency** — answer generation and English normalization require an OpenAI API key; retrieval (Search tab) works without one
 
@@ -263,3 +269,5 @@ The project includes a 17-question evaluation suite in `eval/evaluate.py` coveri
 | 14 | English normalization (text_en / text_raw) | ✅ |
 | 15 | Multilingual ingestion (Whisper translate mode) | ✅ |
 | 16 | Conversation history + contextual follow-up retrieval | ✅ |
+| 17 | Full 18-video ingestion (1,528 chunks → 1,510 indexed) | ✅ |
+| 18 | Dynamic video filter, UI polish, code-quality finalization | ✅ |
