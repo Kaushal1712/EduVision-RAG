@@ -75,13 +75,16 @@ section[data-testid="stSidebar"] {
     border-radius: 8px;
     padding: 12px 16px;
     margin-bottom: 10px;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
-.source-card:hover { border-left-color: #9C94FF; }
+.source-card:hover {
+    border-left-color: #9C94FF;
+    box-shadow: 0 2px 12px rgba(108,99,255,0.12);
+}
 
 .source-card.below-threshold {
-    border-left-color: #444;
-    opacity: 0.7;
+    border-left-color: #3A3D55;
+    opacity: 0.65;
 }
 
 .source-header {
@@ -187,6 +190,96 @@ section[data-testid="stSidebar"] {
     color: #E8EAF6;
     font-weight: 600;
 }
+
+/* ── Corpus / header pills ─────────────────────────────────────────────────── */
+.corpus-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #6C63FF18;
+    border: 1px solid #6C63FF40;
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 0.76em;
+    color: #9C94FF;
+    margin-right: 6px;
+    margin-top: 6px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+/* ── Welcome / intro cards ─────────────────────────────────────────────────── */
+.welcome-card {
+    background: linear-gradient(135deg, #1A1D2E 0%, #12152A 100%);
+    border: 1px solid #2A2D45;
+    border-top: 3px solid #6C63FF;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+}
+
+.welcome-card h3 {
+    color: #E8EAF6;
+    font-size: 0.98em;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+}
+
+.welcome-card p {
+    color: #9B9EC0;
+    font-size: 0.88em;
+    margin: 0 0 14px 0;
+    line-height: 1.6;
+}
+
+.example-label {
+    font-size: 0.72em;
+    color: #6B6F90;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+/* ── Video player banner ───────────────────────────────────────────────────── */
+.player-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(90deg, #6C63FF1A 0%, transparent 100%);
+    border-left: 4px solid #6C63FF;
+    border-radius: 6px;
+    padding: 9px 16px;
+    margin-bottom: 10px;
+    font-size: 0.88em;
+    color: #C5C7D4;
+}
+
+.player-banner .player-icon { font-size: 1.1em; }
+.player-banner strong { color: #E8EAF6; }
+
+/* ── Search result count ───────────────────────────────────────────────────── */
+.result-count {
+    background: #1A1D2E;
+    border: 1px solid #2A2D45;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.85em;
+    color: #9B9EC0;
+    margin-bottom: 14px;
+}
+
+.result-count strong { color: #E8EAF6; }
+
+/* ── Sidebar section labels ────────────────────────────────────────────────── */
+.sidebar-label {
+    font-size: 0.7em;
+    color: #5A5E80;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -202,7 +295,7 @@ def _load_pipeline():
     reruns — equivalent to a module-level singleton. BGE-M3 (~570MB)
     is expensive to load; this ensures it loads exactly once.
 
-    Returns (ask_fn, search_fn, health_check_fn, status)
+    Returns (ask_fn, search_fn, health_check_fn, status, list_videos_fn)
     """
     from pipeline import ask, search, health_check, list_indexed_videos
     status = health_check()
@@ -277,6 +370,7 @@ def _render_source_card(
                 key=btn_key,
                 help=f"Jump to {result.start_time_fmt} in {vid_label}",
                 use_container_width=True,
+                type="primary",
             ):
                 st.session_state.video_player = {
                     "path": str(vpath),
@@ -293,9 +387,9 @@ def _render_diagnostics(result):
         chips.append(f'<span class="metric-chip">retrieved <span>{result.retrieval_stats.total_results}</span></span>')
         chips.append(f'<span class="metric-chip">above threshold <span>{result.retrieval_stats.above_threshold}</span></span>')
         chips.append(f'<span class="metric-chip">top sim <span>{result.retrieval_stats.top_similarity:.2f}</span></span>')
-    chips.append(f'<span class="metric-chip">⏱ <span>{result.total_latency_s:.1f}s</span></span>')
+    chips.append(f'<span class="metric-chip">\u23f1 <span>{result.total_latency_s:.1f}s</span></span>')
     if result.total_tokens:
-        chips.append(f'<span class="metric-chip">🪙 <span>{result.total_tokens} tokens</span></span>')
+        chips.append(f'<span class="metric-chip">\U0001fa99 <span>{result.total_tokens} tokens</span></span>')
     st.markdown("".join(chips), unsafe_allow_html=True)
 
 
@@ -331,35 +425,37 @@ def _render_sidebar(status):
     with st.sidebar:
         # Branding
         st.markdown("""
-<div style="text-align:center; padding: 12px 0 20px 0;">
-    <div style="font-size:2.2em;">🎓</div>
-    <div style="font-size:1.3em; font-weight:700; color:#E8EAF6; letter-spacing:0.5px;">EduVision RAG</div>
-    <div style="font-size:0.78em; color:#7B7FA0; margin-top:2px;">Video Teaching Assistant</div>
+<div style="text-align:center; padding: 16px 0 22px 0;">
+    <div style="font-size:2.4em; line-height:1;">🎓</div>
+    <div style="font-size:1.25em; font-weight:700; color:#E8EAF6;
+                letter-spacing:0.4px; margin-top:8px;">EduVision RAG</div>
+    <div style="font-size:0.76em; color:#7B7FA0; margin-top:3px;
+                letter-spacing:0.02em;">AI Video Teaching Assistant</div>
 </div>
 """, unsafe_allow_html=True)
 
         st.divider()
 
         # System status
-        st.markdown("**System Status**")
+        st.markdown('<div class="sidebar-label">System Status</div>', unsafe_allow_html=True)
         chroma_icon = "✅" if status.chroma_ok else "❌"
         key_icon    = "✅" if status.api_key_set else "⚠️"
 
         st.markdown(f"""
-<div class="status-pill">{chroma_icon} {status.chroma_count} chunks indexed</div><br>
+<div class="status-pill">{chroma_icon} {status.chroma_count:,} chunks indexed</div><br>
 <div class="status-pill">{key_icon} {status.model_name}</div>
 """, unsafe_allow_html=True)
 
         if not status.api_key_set:
-            st.warning("⚠️ OPENAI_API_KEY not set. Search tab still works.", icon="🔑")
+            st.warning("OPENAI_API_KEY not set — Search tab still works without it.", icon="🔑")
 
         if not status.chroma_ok:
-            st.error("ChromaDB unavailable. Run Stage 7 (indexer.py) first.")
+            st.error("ChromaDB unavailable. Run `python ingestion/indexer_v2.py` first.")
 
         st.divider()
 
         # Video filter — options built dynamically from ChromaDB metadata
-        st.markdown("**Filter by Video**")
+        st.markdown('<div class="sidebar-label">Filter by Video</div>', unsafe_allow_html=True)
         _vid_options = ["All Videos"] + [label for _, label in st.session_state.get("_video_catalogue", [])]
         video_filter = st.radio(
             label="video_filter_radio",
@@ -370,7 +466,7 @@ def _render_sidebar(status):
 
         st.divider()
 
-        # About — values are derived from runtime state and settings, not hardcoded
+        # About — values derived from runtime state and settings, not hardcoded
         with st.expander("ℹ️ About this app", expanded=False):
             st.markdown(f"""
 **EduVision RAG** answers questions about video course material using a
@@ -380,14 +476,15 @@ retrieval-augmented generation pipeline:
 2. **ChromaDB** finds the most relevant transcript chunks
 3. **GPT-4o-mini** generates a grounded answer from the evidence
 
-All answers cite exact timestamps — click the timestamp to know exactly
-where in the video the explanation appears.
+All answers cite exact timestamps — click any **▶ timestamp** button to
+jump directly to that moment in the video.
 
 ---
-- Chunks: **{status.chroma_count}** (v2 index — English normalised, noise filtered)
-- Model: **BGE-M3** + **gpt-4o-mini**
+- Corpus: **{status.chroma_count:,} chunks** · 18 videos · v2 index
+- Embeddings: **BGE-M3** (1024-dim, multilingual)
+- Generator: **gpt-4o-mini**
 - Threshold: **{SIMILARITY_THRESHOLD}** cosine similarity
-- Retrieval pool: **{RETRIEVAL_TOP_K}** candidates → top **{MAX_LLM_EVIDENCE}** to LLM
+- Retrieval: top **{RETRIEVAL_TOP_K}** candidates → best **{MAX_LLM_EVIDENCE}** to LLM
 """)
 
         # Clear chat
@@ -413,12 +510,15 @@ def _render_chat_tab(ask_fn, video_filter: str):
 
     # ── Example queries (only when conversation is empty) ─────────────────────
     if not st.session_state.chat_history:
-        st.markdown(
-            "<div style='color:#7B7FA0; font-size:0.85em; margin-bottom:8px;'>"
-            "Try an example question:"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+<div class="welcome-card">
+    <h3>💬 Ask anything about the course</h3>
+    <p>Get grounded answers from the video transcripts with exact timestamp
+    citations. Click any <strong>▶ timestamp</strong> in a source card to jump
+    directly to that moment in the video.</p>
+    <div class="example-label">Try an example</div>
+</div>
+""", unsafe_allow_html=True)
         ex_cols = st.columns(2)
         for i, ex in enumerate(_CHAT_EXAMPLES):
             with ex_cols[i % 2]:
@@ -457,7 +557,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
 
     # ── Chat input ────────────────────────────────────────────────────────────
     query = st.chat_input(
-        placeholder="Ask about the course... e.g. 'How do I install VS Code?'",
+        placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
     )
 
     # If an example button was clicked this rerun, use it as the query.
@@ -483,9 +583,16 @@ def _render_chat_tab(ask_fn, video_filter: str):
             st.markdown(query)
         st.session_state.chat_history.append({"role": "user", "content": query, "result": None})
 
+        # Capture the history index this assistant turn WILL occupy once appended.
+        # This ensures the Go-to-Timestamp button keys rendered here match exactly
+        # what the history-loop will use on the very next rerun (group_id=f"h{j}").
+        # Without this, the first click is lost because Streamlit sees the key
+        # "play_cur_..." during the click-rerun but the widget is now "play_h1_..."
+        _live_j = len(st.session_state.chat_history)  # == future assistant index
+
         # Generate answer with spinner
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Retrieving evidence and generating answer..."):
+            with st.spinner("Retrieving evidence and generating answer…"):
                 result = ask_fn(
                     query,
                     video_id_filter=video_id_filter,
@@ -520,7 +627,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
             if result.sources_used:
                 with st.expander(f"\U0001f4cc {len(result.sources_used)} Source(s) Used", expanded=True):
                     for i, s in enumerate(result.sources_used):
-                        _render_source_card(s, i + 1, group_id="cur")
+                        _render_source_card(s, i + 1, group_id=f"h{_live_j}")
 
             elif result.not_found and result.retrieval_results:
                 with st.expander("\U0001f50d Closest Matches Found (below threshold)", expanded=True):
@@ -529,7 +636,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
                         unsafe_allow_html=True,
                     )
                     for i, r in enumerate(result.retrieval_results[:3]):
-                        _render_source_card(r, i + 1, show_below_threshold=True, group_id="curb")
+                        _render_source_card(r, i + 1, show_below_threshold=True, group_id=f"h{_live_j}b")
 
         # Save to history
         st.session_state.chat_history.append({
@@ -545,20 +652,13 @@ def _render_chat_tab(ask_fn, video_filter: str):
 def _render_search_tab(search_fn, video_filter: str):
     """Render the evidence-search tab (retrieval only, no LLM)."""
 
-    st.markdown("""
-<div style="color:#7B7FA0; font-size:0.88em; margin-bottom:16px;">
-Search for relevant transcript evidence without generating an LLM answer.
-Useful for exploring what the videos cover and verifying timestamps.
-</div>
-""", unsafe_allow_html=True)
-
     col_input, col_btn = st.columns([5, 1])
     with col_input:
         # key="search_input" ties this widget to st.session_state.search_input,
         # so example buttons can pre-populate it by writing to that key.
         search_query = st.text_input(
             label="search_query",
-            placeholder="Search transcript evidence... e.g. 'HTML structure'",
+            placeholder="Search transcript evidence… e.g. 'HTML structure'",
             label_visibility="collapsed",
             key="search_input",
         )
@@ -577,33 +677,46 @@ Useful for exploring what the videos cover and verifying timestamps.
             _label_to_id = {label: vid_id for vid_id, label in _catalogue}
             video_id_filter = _label_to_id.get(video_filter)
 
-        with st.spinner("Searching..."):
+        with st.spinner("Searching…"):
             results = search_fn(search_query, video_id_filter=video_id_filter)
 
         if not results:
-            st.info("No results found. Try a different query.")
+            st.info("No results found. Try a different query or broaden your search terms.")
         else:
             above = [r for r in results if not r.below_threshold]
             below = [r for r in results if r.below_threshold]
 
             st.markdown(
-                f"**{len(results)} results** — "
-                f"{len(above)} above threshold · {len(below)} below threshold",
+                f'<div class="result-count">'
+                f'<strong>{len(results)}</strong> results — '
+                f'<strong>{len(above)}</strong> above threshold'
+                f'&nbsp;&middot;&nbsp;'
+                f'<strong>{len(below)}</strong> below threshold'
+                f'</div>',
+                unsafe_allow_html=True,
             )
 
             if above:
-                st.markdown("##### \u2705 Above Threshold")
+                st.markdown("##### ✅ Above Threshold")
                 for i, r in enumerate(above):
                     _render_source_card(r, i + 1, group_id="srch")
 
             if below:
-                st.markdown("##### \u26a0\ufe0f Below Threshold (weak match)")
+                st.markdown("##### ⚠️ Below Threshold (weak match)")
                 for i, r in enumerate(below):
                     _render_source_card(r, i + 1, show_below_threshold=True, group_id="srchb")
 
     elif not search_query:
-        # ── Example queries (functional buttons, shown when search field is empty) ──
-        st.markdown("**Try searching for:**")
+        # ── Welcome card + example queries ────────────────────────────────────
+        st.markdown("""
+<div class="welcome-card">
+    <h3>🔍 Search transcript evidence</h3>
+    <p>Search across all video transcripts without generating an LLM answer.
+    Useful for exploring what the course covers, verifying timestamps,
+    and debugging retrieval quality.</p>
+    <div class="example-label">Try searching for</div>
+</div>
+""", unsafe_allow_html=True)
         example_cols = st.columns(3)
         examples = [
             "HTML structure",
@@ -628,7 +741,7 @@ def main():
     _init_session()
 
     # Load pipeline (cached after first call)
-    with st.spinner("Loading EduVision RAG pipeline..."):
+    with st.spinner("Loading EduVision RAG pipeline…"):
         ask_fn, search_fn, health_check_fn, status, list_videos_fn = _load_pipeline()
 
     # Build video catalogue once per session (cached in session_state)
@@ -638,35 +751,52 @@ def main():
     # Sidebar
     _render_sidebar(status)
 
-    # Main content
+    # ── Main header ───────────────────────────────────────────────────────────
     st.markdown("""
-<div style="padding: 8px 0 20px 0;">
-    <h1 style="font-size:1.8em; font-weight:700; margin:0; color:#E8EAF6;">
-        \U0001f393 EduVision RAG
+<div style="padding: 10px 0 6px 0; border-bottom: 1px solid #2A2D45; margin-bottom: 16px;">
+    <h1 style="font-size:1.75em; font-weight:700; margin:0; color:#E8EAF6; line-height:1.2;">
+        🎓 EduVision RAG
     </h1>
-    <p style="color:#7B7FA0; margin:4px 0 0 0; font-size:0.92em;">
-        Ask questions about your video course \u2014 get grounded answers with exact timestamps.
+    <p style="color:#7B7FA0; margin:5px 0 10px 0; font-size:0.9em; line-height:1.5;">
+        Ask questions about your video course — get grounded answers with exact timestamps.
     </p>
 </div>
 """, unsafe_allow_html=True)
 
+    # Corpus status pills (dynamic from ChromaDB)
+    n_vids = len(st.session_state.get("_video_catalogue", []))
+    st.markdown(
+        f'<span class="corpus-pill">📚 {status.chroma_count:,} chunks</span>'
+        f'<span class="corpus-pill">🎬 {n_vids} videos</span>'
+        f'<span class="corpus-pill">🤖 BGE-M3 + GPT-4o-mini</span>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
     # Stop early if system not ready
     if not status.chroma_ok:
-        st.error("\U0001f534 ChromaDB is not available. Run `python ingestion/indexer.py` first.")
+        st.error("🔴 ChromaDB is not available. Run `python ingestion/indexer_v2.py` first.")
         st.stop()
 
     # ── Video Player (appears when a timestamp button is clicked) ─────────────
     vp = st.session_state.get("video_player")
     if vp:
-        with st.expander(f"\U0001f4fa Now Playing \u2014 {vp['label']}", expanded=True):
-            col_vid, col_close = st.columns([12, 1])
-            with col_vid:
-                st.video(vp["path"], start_time=vp["start_time"])
-            with col_close:
-                st.markdown("<br>", unsafe_allow_html=True)  # vertical nudge
-                if st.button("\u2715", key="close_player", help="Close player"):
-                    st.session_state.video_player = None
-                    st.rerun()
+        st.markdown(
+            f'<div class="player-banner">'
+            f'<span class="player-icon">📺</span>'
+            f'<span>Now playing — <strong>{vp["label"]}</strong></span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        col_vid, col_close = st.columns([12, 1])
+        with col_vid:
+            st.video(vp["path"], start_time=vp["start_time"])
+        with col_close:
+            st.markdown("<br>", unsafe_allow_html=True)  # vertical nudge
+            if st.button("\u2715", key="close_player", help="Close player"):
+                st.session_state.video_player = None
+                st.rerun()
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     # Tabs
     tab_chat, tab_search = st.tabs(["💬 Ask a Question", "🔍 Search Evidence"])
