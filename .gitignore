@@ -20,7 +20,7 @@ ENV/
 # ── Data (generated, large, or sensitive) ────────────────────────────────────
 data/transcripts/
 data/processed/
-data/vector_db/
+# data/vector_db/
 
 # ── Videos (large binary files) ──────────────────────────────────────────────
 videos/

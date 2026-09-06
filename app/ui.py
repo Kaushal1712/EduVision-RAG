@@ -35,6 +35,12 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 
+# ── Deployment safety flag ────────────────────────────────────────────────────
+# True when the local videos/ directory exists (development / local run).
+# False on Streamlit Community Cloud where videos are not deployed.
+# Checked once at module load to avoid repeated filesystem calls per rerun.
+_VIDEOS_AVAILABLE: bool = VIDEOS_DIR.exists()
+
 # ── Page config — must be the FIRST Streamlit call ───────────────────────────
 st.set_page_config(
     page_title="EduVision RAG",
@@ -322,7 +328,15 @@ def _sim_color_class(similarity: float) -> str:
 
 
 def _video_path(video_filename: str):
-    """Return the absolute Path to the local video file, or None if missing."""
+    """Return the absolute Path to the local video file, or None if missing.
+
+    Returns None when:
+    - videos/ directory does not exist (deployment environment), or
+    - the specific .mp4 file has not been placed in videos/.
+    Callers already guard on the None return value so no crash occurs.
+    """
+    if not _VIDEOS_AVAILABLE:
+        return None
     p = VIDEOS_DIR / video_filename
     return p if p.exists() else None
 
@@ -781,6 +795,13 @@ def main():
     # ── Video Player (appears when a timestamp button is clicked) ─────────────
     vp = st.session_state.get("video_player")
     if vp:
+        # Guard: verify the file still exists before calling st.video().
+        # On deployment the path will be absent (videos/ not deployed); a
+        # stale session_state entry from a previous session could also
+        # reference a file that no longer exists locally.
+        _vp_path = Path(vp["path"]) if vp.get("path") else None
+        _vp_ok   = _vp_path is not None and _vp_path.exists()
+
         st.markdown(
             f'<div class="player-banner">'
             f'<span class="player-icon">📺</span>'
@@ -790,7 +811,15 @@ def main():
         )
         col_vid, col_close = st.columns([12, 1])
         with col_vid:
-            st.video(vp["path"], start_time=vp["start_time"])
+            if _vp_ok:
+                st.video(vp["path"], start_time=vp["start_time"])
+            else:
+                # Deployment environment: video file not present locally.
+                st.info(
+                    "📽️ Video playback is not available in this environment. "
+                    "Timestamps are still visible in the source cards above.",
+                    icon="ℹ️",
+                )
         with col_close:
             st.markdown("<br>", unsafe_allow_html=True)  # vertical nudge
             if st.button("\u2715", key="close_player", help="Close player"):
