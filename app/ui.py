@@ -431,6 +431,10 @@ def _init_session():
     if "search_auto_submit" not in st.session_state:
         # Set to True by search example buttons to trigger an immediate search.
         st.session_state.search_auto_submit = False
+    if "search_prefill" not in st.session_state:
+        # Populated by search example buttons; consumed before the text_input
+        # widget is created to avoid the post-widget state assignment error.
+        st.session_state.search_prefill = ""
     if "chat_prefill" not in st.session_state:
         # Populated by chat example buttons to submit a pre-set query.
         st.session_state.chat_prefill = ""
@@ -669,14 +673,19 @@ def _render_chat_tab(ask_fn, video_filter: str):
 def _render_search_tab(search_fn, video_filter: str):
     """Render the evidence-search tab (retrieval only, no LLM)."""
 
+    # Consume search_prefill BEFORE the text_input widget is instantiated.
+    # Writing to a widget's session-state key after it already exists raises
+    # StreamlitAPIException. Using value= here is safe because the widget
+    # has not yet been created this rerun.
+    _search_initial = st.session_state.pop("search_prefill", "")
+
     col_input, col_btn = st.columns([5, 1])
     with col_input:
-        # key="search_input" ties this widget to st.session_state.search_input,
-        # so example buttons can pre-populate it by writing to that key.
         search_query = st.text_input(
             label="search_query",
             placeholder="Search transcript evidence… e.g. 'HTML structure'",
             label_visibility="collapsed",
+            value=_search_initial,
             key="search_input",
         )
     with col_btn:
@@ -746,8 +755,11 @@ def _render_search_tab(search_fn, video_filter: str):
         for i, ex in enumerate(examples):
             with example_cols[i % 3]:
                 if st.button(f"🔍 {ex}", key=f"srch_ex_{i}", use_container_width=True):
-                    # Populate the search field and trigger an auto-submit on next rerun
-                    st.session_state.search_input = ex
+                    # Set search_prefill (not search_input directly — that would
+                    # raise StreamlitAPIException because the widget already exists).
+                    # On the next rerun, search_prefill is consumed before the
+                    # text_input is created and auto-submit fires the search.
+                    st.session_state.search_prefill = ex
                     st.session_state.search_auto_submit = True
                     st.rerun()
 
