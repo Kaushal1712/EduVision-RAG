@@ -58,7 +58,38 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Global ────────────────────────────────────────────────────────────────── */
+/* ── Chat composer (in-flow text_input + Send button) ─────────────────────
+   Replaces st.chat_input() which Streamlit renders as a fixed viewport
+   footer — disconnected from tab content and causing a large visual gap.
+   This in-flow composer sits naturally after the conversation history. */
+.chat-composer {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #1A1C2E;
+    border: 1px solid #2E3158;
+    border-radius: 12px;
+}
+.chat-composer .stTextInput {
+    flex: 1;
+}
+.chat-composer .stTextInput input {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #E8EAF6 !important;
+    font-size: 0.95em !important;
+    padding: 0 !important;
+}
+.chat-composer .stTextInput input:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* ── Misc ──────────────────────────────────────────────────────────────────*/
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 html, body, [class*="css"] {
@@ -583,15 +614,6 @@ def _render_chat_tab(ask_fn, video_filter: str):
                         for i, r in enumerate(result.retrieval_results[:3]):
                             _render_source_card(r, i + 1, show_below_threshold=True, group_id=f"h{j}b")
 
-    # ── Chat input ─────────────────────────────────────────────────────────────
-    # Pad beneath the chat history so content is never hidden under the
-    # fixed-position chat_input composer — gives the composer a stable
-    # visual anchor at the bottom without JavaScript or layout hacks.
-    st.markdown(
-        "<div style='padding-bottom: 80px'></div>",
-        unsafe_allow_html=True,
-    )
-
     # ── Question counter indicator ─────────────────────────────────────────────
     # st.empty() reserves a DOM slot here. It is filled immediately with the
     # current count, then updated in-place (before ask_fn()) when a question
@@ -611,15 +633,46 @@ def _render_chat_tab(ask_fn, video_filter: str):
     # Initial render — shows current count before any query this rerun.
     _render_counter(st.session_state.get("question_count", 0))
 
-    query = st.chat_input(
-        placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
-    )
+    # ── In-flow chat composer ─────────────────────────────────────────────────
+    # st.chat_input() is a Streamlit fixed viewport footer — inside st.tabs()
+    # it creates a large gap and appears visually disconnected from the chat
+    # history. We use st.text_input() + Send button in normal document flow
+    # so the composer sits naturally at the bottom of the conversation.
+    st.markdown('<div class="chat-composer">', unsafe_allow_html=True)
+    _col_inp, _col_btn = st.columns([9, 1])
+    with _col_inp:
+        raw_input = st.text_input(
+            label="chat_composer_input",
+            placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
+            label_visibility="collapsed",
+            key="chat_composer",
+        )
+    with _col_btn:
+        send_clicked = st.button(
+            "➤",
+            key="chat_send",
+            use_container_width=True,
+            help="Send question",
+            type="primary",
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Resolve the query: Send button, Enter key, or chat_prefill (example buttons).
+    query: str = ""
+    if send_clicked and raw_input.strip():
+        query = raw_input.strip()
+        # Clear the input field for the next question
+        st.session_state.chat_composer = ""
+    elif not send_clicked and raw_input.strip():
+        # Text typed but Send not clicked yet — wait for explicit submit.
+        pass
 
     # If an example button was clicked this rerun, use it as the query.
     # chat_prefill is set by the example buttons above and cleared here.
     if not query and st.session_state.get("chat_prefill"):
         query = st.session_state.chat_prefill
         st.session_state.chat_prefill = ""
+        st.session_state.chat_composer = query  # pre-fill the composer too
 
     if query:
         # ── Session question limit ─────────────────────────────────────────────
