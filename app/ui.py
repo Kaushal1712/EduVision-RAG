@@ -58,35 +58,56 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Chat composer (in-flow text_input + Send button) ─────────────────────
-   Replaces st.chat_input() which Streamlit renders as a fixed viewport
-   footer — disconnected from tab content and causing a large visual gap.
-   This in-flow composer sits naturally after the conversation history. */
-.chat-composer {
+/* ── Chat composer + Search input — unified pill style ────────────────────
+   Both use a shared .composer-bar CSS class so they look like one
+   coherent design system rather than default Streamlit forms.
+   The composer bar wraps a text_input and a Send button as one unit. */
+.composer-bar {
     display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-top: 16px;
-    padding: 12px 16px;
+    align-items: stretch;
     background: #1A1C2E;
     border: 1px solid #2E3158;
     border-radius: 12px;
+    padding: 6px 6px 6px 14px;
+    margin-top: 8px;
+    gap: 6px;
 }
-.chat-composer .stTextInput {
-    flex: 1;
+/* Collapse the gap Streamlit injects between columns inside .composer-bar */
+.composer-bar [data-testid="column"] {
+    padding: 0 !important;
+    gap: 0 !important;
 }
-.chat-composer .stTextInput input {
+.composer-bar [data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+    align-items: center;
+}
+/* Text input inside the bar: transparent, no border */
+.composer-bar .stTextInput > div > div {
     background: transparent !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-    color: #E8EAF6 !important;
-    font-size: 0.95em !important;
     padding: 0 !important;
 }
-.chat-composer .stTextInput input:focus {
+.composer-bar .stTextInput input {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #E8EAF6 !important;
+    font-size: 0.95em !important;
+    padding: 4px 0 !important;
+}
+.composer-bar .stTextInput input:focus {
     outline: none !important;
     box-shadow: none !important;
+}
+/* Send button inside the bar: compact pill */
+.composer-bar .stButton button {
+    border-radius: 8px !important;
+    padding: 4px 14px !important;
+    font-size: 1em !important;
+    height: 36px !important;
+    min-width: 44px;
 }
 
 /* ── Misc ──────────────────────────────────────────────────────────────────*/
@@ -473,6 +494,10 @@ def _init_session():
         # Tracks how many Ask-a-Question requests have been made this session.
         # Search Evidence queries do NOT count toward this limit.
         st.session_state.question_count = 0
+    if "chat_composer" not in st.session_state:
+        # Backing state for the in-flow chat text_input widget.
+        # Pre-populated here (before widget creation) when chat_prefill is set.
+        st.session_state.chat_composer = ""
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -638,7 +663,15 @@ def _render_chat_tab(ask_fn, video_filter: str):
     # it creates a large gap and appears visually disconnected from the chat
     # history. We use st.text_input() + Send button in normal document flow
     # so the composer sits naturally at the bottom of the conversation.
-    st.markdown('<div class="chat-composer">', unsafe_allow_html=True)
+    #
+    # IMPORTANT: consume chat_prefill into st.session_state.chat_composer
+    # BEFORE creating the widget — assigning to a keyed widget's session_state
+    # key after widget creation raises StreamlitAPIException.
+    _chat_prefill = st.session_state.pop("chat_prefill", "")
+    if _chat_prefill:
+        st.session_state.chat_composer = _chat_prefill  # safe: widget not yet created
+
+    st.markdown('<div class="composer-bar">', unsafe_allow_html=True)
     _col_inp, _col_btn = st.columns([9, 1])
     with _col_inp:
         raw_input = st.text_input(
@@ -657,22 +690,15 @@ def _render_chat_tab(ask_fn, video_filter: str):
         )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Resolve the query: Send button, Enter key, or chat_prefill (example buttons).
+    # Resolve the query from Send button click.
+    # NOTE: NEVER assign st.session_state.chat_composer after this point.
     query: str = ""
     if send_clicked and raw_input.strip():
         query = raw_input.strip()
-        # Clear the input field for the next question
-        st.session_state.chat_composer = ""
-    elif not send_clicked and raw_input.strip():
-        # Text typed but Send not clicked yet — wait for explicit submit.
-        pass
-
-    # If an example button was clicked this rerun, use it as the query.
-    # chat_prefill is set by the example buttons above and cleared here.
-    if not query and st.session_state.get("chat_prefill"):
-        query = st.session_state.chat_prefill
-        st.session_state.chat_prefill = ""
-        st.session_state.chat_composer = query  # pre-fill the composer too
+    elif _chat_prefill and not send_clicked:
+        # Example button was clicked: chat_prefill was pre-loaded into the
+        # widget above; treat it as the submitted query immediately.
+        query = _chat_prefill
 
     if query:
         # ── Session question limit ─────────────────────────────────────────────
@@ -789,7 +815,8 @@ def _render_search_tab(search_fn, video_filter: str):
     if _search_initial:
         st.session_state.search_input = _search_initial
 
-    col_input, col_btn = st.columns([5, 1])
+    st.markdown('<div class="composer-bar">', unsafe_allow_html=True)
+    col_input, col_btn = st.columns([8, 1])
     with col_input:
         search_query = st.text_input(
             label="search_query",
@@ -799,6 +826,7 @@ def _render_search_tab(search_fn, video_filter: str):
         )
     with col_btn:
         search_clicked = st.button("Search", use_container_width=True, type="primary")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # search_auto_submit is set by example buttons so they trigger an immediate search.
     auto_submit = st.session_state.get("search_auto_submit", False)
