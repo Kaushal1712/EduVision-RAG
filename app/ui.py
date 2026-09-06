@@ -536,16 +536,6 @@ _QUESTION_LIMIT = 10
 def _render_chat_tab(ask_fn, video_filter: str):
     """Render the main Q&A chat interface."""
 
-    # ── Question counter indicator ─────────────────────────────────────────────
-    _q_count = st.session_state.get("question_count", 0)
-    _limit_reached = _q_count >= _QUESTION_LIMIT
-    _counter_color = "#E57373" if _limit_reached else "#7B7FA0"
-    st.markdown(
-        f'<div style="text-align:right; font-size:0.75em; color:{_counter_color}; '
-        f'margin-bottom:4px;">Questions: {_q_count} / {_QUESTION_LIMIT}</div>',
-        unsafe_allow_html=True,
-    )
-
     # ── Example queries (only when conversation is empty) ─────────────────────
     if not st.session_state.chat_history:
         st.markdown("""
@@ -593,7 +583,34 @@ def _render_chat_tab(ask_fn, video_filter: str):
                         for i, r in enumerate(result.retrieval_results[:3]):
                             _render_source_card(r, i + 1, show_below_threshold=True, group_id=f"h{j}b")
 
-    # ── Chat input ────────────────────────────────────────────────────────────
+    # ── Chat input ─────────────────────────────────────────────────────────────
+    # Pad beneath the chat history so content is never hidden under the
+    # fixed-position chat_input composer — gives the composer a stable
+    # visual anchor at the bottom without JavaScript or layout hacks.
+    st.markdown(
+        "<div style='padding-bottom: 80px'></div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Question counter indicator ─────────────────────────────────────────────
+    # st.empty() reserves a DOM slot here. It is filled immediately with the
+    # current count, then updated in-place (before ask_fn()) when a question
+    # is submitted — so the counter shows the new value while the spinner runs,
+    # without requiring a separate rerun.
+    _counter_slot = st.empty()
+
+    def _render_counter(n: int) -> None:
+        """Write the counter into the reserved slot."""
+        color = "#E57373" if n >= _QUESTION_LIMIT else "#7B7FA0"
+        _counter_slot.markdown(
+            f'<div style="text-align:right; font-size:0.75em; color:{color}; '
+            f'margin-bottom:4px;">Questions: {n} / {_QUESTION_LIMIT}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Initial render — shows current count before any query this rerun.
+    _render_counter(st.session_state.get("question_count", 0))
+
     query = st.chat_input(
         placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
     )
@@ -606,8 +623,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
 
     if query:
         # ── Session question limit ─────────────────────────────────────────────
-        # Check BEFORE doing any pipeline work. Counter is incremented only
-        # when execution actually proceeds (not on typing or UI reruns).
+        # Check BEFORE incrementing or calling the pipeline.
         if st.session_state.get("question_count", 0) >= _QUESTION_LIMIT:
             with st.chat_message("user", avatar="\U0001f9d1\u200d\U0001f393"):
                 st.markdown(query)
@@ -618,6 +634,13 @@ def _render_chat_tab(ask_fn, video_filter: str):
                     icon="\u26a0\ufe0f",
                 )
             return  # stop here — do NOT call the pipeline
+
+        # ── Increment counter and update the placeholder immediately ──────────
+        # The st.empty() slot was already rendered above; .markdown() on it
+        # updates the DOM in-place before ask_fn() is called, so the user
+        # sees the new count while the spinner runs — no extra rerun needed.
+        st.session_state.question_count = st.session_state.get("question_count", 0) + 1
+        _render_counter(st.session_state.question_count)
 
         # Determine video_id_filter from sidebar selection
         video_id_filter = None
@@ -641,10 +664,6 @@ def _render_chat_tab(ask_fn, video_filter: str):
         # Without this, the first click is lost because Streamlit sees the key
         # "play_cur_..." during the click-rerun but the widget is now "play_h1_..."
         _live_j = len(st.session_state.chat_history)  # == future assistant index
-
-        # Increment the counter immediately before the pipeline call —
-        # only real executions count, not reruns or typing events.
-        st.session_state.question_count = st.session_state.get("question_count", 0) + 1
 
         # Generate answer with spinner
         with st.chat_message("assistant", avatar="\U0001f916"):
