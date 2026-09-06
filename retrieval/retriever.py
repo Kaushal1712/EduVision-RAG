@@ -114,7 +114,7 @@ def _get_model():
         from FlagEmbedding import BGEM3FlagModel
         logger.info("Loading BGE-M3 model '%s' for query encoding ...", BGE_MODEL)
         t0 = time.time()
-        _BGE_MODEL = BGEM3FlagModel(BGE_MODEL, use_fp16=True)
+        _BGE_MODEL = BGEM3FlagModel(BGE_MODEL, use_fp16=False)
         logger.info("BGE-M3 loaded in %.1f s", time.time() - t0)
     return _BGE_MODEL
 
