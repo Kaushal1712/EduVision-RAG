@@ -438,6 +438,10 @@ def _init_session():
     if "chat_prefill" not in st.session_state:
         # Populated by chat example buttons to submit a pre-set query.
         st.session_state.chat_prefill = ""
+    if "question_count" not in st.session_state:
+        # Tracks how many Ask-a-Question requests have been made this session.
+        # Search Evidence queries do NOT count toward this limit.
+        st.session_state.question_count = 0
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -526,8 +530,21 @@ _CHAT_EXAMPLES = [
 ]
 
 
+_QUESTION_LIMIT = 10
+
+
 def _render_chat_tab(ask_fn, video_filter: str):
     """Render the main Q&A chat interface."""
+
+    # ── Question counter indicator ─────────────────────────────────────────────
+    _q_count = st.session_state.get("question_count", 0)
+    _limit_reached = _q_count >= _QUESTION_LIMIT
+    _counter_color = "#E57373" if _limit_reached else "#7B7FA0"
+    st.markdown(
+        f'<div style="text-align:right; font-size:0.75em; color:{_counter_color}; '
+        f'margin-bottom:4px;">Questions: {_q_count} / {_QUESTION_LIMIT}</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── Example queries (only when conversation is empty) ─────────────────────
     if not st.session_state.chat_history:
@@ -588,6 +605,20 @@ def _render_chat_tab(ask_fn, video_filter: str):
         st.session_state.chat_prefill = ""
 
     if query:
+        # ── Session question limit ─────────────────────────────────────────────
+        # Check BEFORE doing any pipeline work. Counter is incremented only
+        # when execution actually proceeds (not on typing or UI reruns).
+        if st.session_state.get("question_count", 0) >= _QUESTION_LIMIT:
+            with st.chat_message("user", avatar="\U0001f9d1\u200d\U0001f393"):
+                st.markdown(query)
+            with st.chat_message("assistant", avatar="\U0001f916"):
+                st.info(
+                    f"You've reached the {_QUESTION_LIMIT}-question limit for this session. "
+                    "You can continue exploring **Search Evidence** \u2192",
+                    icon="\u26a0\ufe0f",
+                )
+            return  # stop here — do NOT call the pipeline
+
         # Determine video_id_filter from sidebar selection
         video_id_filter = None
         if video_filter != "All Videos":
@@ -600,7 +631,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
         prior_history = list(st.session_state.chat_history)
 
         # Show user message immediately
-        with st.chat_message("user", avatar="🧑‍🎓"):
+        with st.chat_message("user", avatar="\U0001f9d1\u200d\U0001f393"):
             st.markdown(query)
         st.session_state.chat_history.append({"role": "user", "content": query, "result": None})
 
@@ -611,8 +642,12 @@ def _render_chat_tab(ask_fn, video_filter: str):
         # "play_cur_..." during the click-rerun but the widget is now "play_h1_..."
         _live_j = len(st.session_state.chat_history)  # == future assistant index
 
+        # Increment the counter immediately before the pipeline call —
+        # only real executions count, not reruns or typing events.
+        st.session_state.question_count = st.session_state.get("question_count", 0) + 1
+
         # Generate answer with spinner
-        with st.chat_message("assistant", avatar="🤖"):
+        with st.chat_message("assistant", avatar="\U0001f916"):
             with st.spinner("Retrieving evidence and generating answer…"):
                 result = ask_fn(
                     query,
