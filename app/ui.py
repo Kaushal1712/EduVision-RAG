@@ -325,6 +325,59 @@ section[data-testid="stSidebar"] {
 
 .result-count strong { color: #E8EAF6; }
 
+/* ── Tab mode banner ─────────────────────────────────────────────────────
+   Subtle single-line header immediately inside each tab that makes the
+   mode distinction obvious without redesigning the page. */
+.tab-mode-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 12px;
+}
+.tab-mode-banner.chat {
+    background: #6C63FF14;
+    border: 1px solid #6C63FF33;
+    color: #9C94FF;
+}
+.tab-mode-banner.search {
+    background: #0F4C6114;
+    border: 1px solid #0097A733;
+    color: #4DD0E1;
+}
+.tab-mode-banner .mode-label { opacity: 0.75; font-weight: 400; }
+
+/* ── Search Evidence result stats bar ────────────────────────────────────────
+   More prominent than .result-count to match evidence-explorer hierarchy. */
+.evidence-stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #0D2A32;
+    border: 1px solid #0097A740;
+    border-left: 4px solid #00BCD4;
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    font-size: 0.83em;
+    color: #80DEEA;
+}
+.evidence-stats .stat-val {
+    color: #E8EAF6;
+    font-weight: 700;
+    font-size: 1.05em;
+}
+.evidence-stats .stat-sep {
+    color: #2A5A6A;
+    font-size: 1.2em;
+}
+.evidence-stats .above-val { color: #69F0AE; }
+.evidence-stats .below-val { color: #EF9A9A; }
+
 /* ── Sidebar section labels ────────────────────────────────────────────────── */
 .sidebar-label {
     font-size: 0.7em;
@@ -491,6 +544,15 @@ def _init_session():
         # Backing state for the in-flow chat text_input widget.
         # Pre-populated here (before widget creation) when chat_prefill is set.
         st.session_state.chat_composer = ""
+    if "search_results_cache" not in st.session_state:
+        # Stores the last list of RetrievalResult objects returned by search_fn.
+        # Persisted so that cross-rerun triggers (e.g. a timestamp button calling
+        # st.rerun()) can restore the source cards without re-running the search.
+        # This is the Search-Evidence equivalent of chat_history in Ask a Question.
+        st.session_state.search_results_cache = None
+    if "search_query_cache" not in st.session_state:
+        # The query string corresponding to search_results_cache.
+        st.session_state.search_query_cache = ""
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -584,6 +646,15 @@ _QUESTION_LIMIT = 10
 
 def _render_chat_tab(ask_fn, video_filter: str):
     """Render the main Q&A chat interface."""
+
+    # Mode banner — immediately distinguishes this tab from Search Evidence
+    st.markdown(
+        '<div class="tab-mode-banner chat">'
+        '\U0001f4ac Ask a Question'
+        '<span class="mode-label"> │ GPT-4o-mini generates a grounded answer from retrieved evidence</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── Example queries (only when conversation is empty) ─────────────────────
     if not st.session_state.chat_history:
@@ -808,6 +879,15 @@ def _render_chat_tab(ask_fn, video_filter: str):
 def _render_search_tab(search_fn, video_filter: str):
     """Render the evidence-search tab (retrieval only, no LLM)."""
 
+    # Mode banner — immediately distinguishes this tab from Ask a Question
+    st.markdown(
+        '<div class="tab-mode-banner search">'
+        '\U0001f50e Search Evidence'
+        '<span class="mode-label"> │ Semantic retrieval only — no LLM generation — shows raw ranked transcript chunks</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     # Consume search_prefill BEFORE the text_input widget is instantiated.
     # For a keyed widget, st.session_state[key] is always authoritative —
     # value= is ignored when the key already exists. So we must overwrite
@@ -835,6 +915,22 @@ def _render_search_tab(search_fn, video_filter: str):
     if auto_submit:
         st.session_state.search_auto_submit = False
 
+    # ── Determine results to show ──────────────────────────────────────────────
+    # ROOT-CAUSE NOTE (Go-to-Timestamp in Search Evidence):
+    # When the timestamp button in _render_source_card clicks:
+    #   st.session_state.video_player = {...}; st.rerun()
+    # Streamlit reruns from the top. On that rerun, search_clicked=False and
+    # auto_submit=False, so the block below would be skipped — source cards
+    # would never render — and the timestamp buttons would not exist.
+    # The video_player state IS set, but the next render would show it above
+    # an empty search tab: the user sees the video player with NO search
+    # context, which feels like the button did nothing.
+    #
+    # FIX: store results in session_state after every search (same role as
+    # chat_history in Ask a Question). On reruns without an explicit search,
+    # restore from cache so source cards remain visible alongside the player.
+    results = None
+
     if (search_clicked or auto_submit) and search_query:
         video_id_filter = None
         if video_filter != "All Videos":
@@ -845,31 +941,44 @@ def _render_search_tab(search_fn, video_filter: str):
         with st.spinner("Searching…"):
             results = search_fn(search_query, video_id_filter=video_id_filter)
 
+        # Persist for cross-rerun restoration (timestamp clicks, sidebar changes, etc.)
+        st.session_state.search_results_cache = results
+        st.session_state.search_query_cache = search_query
+
+    elif st.session_state.get("search_results_cache") is not None and search_query:
+        # Rerun without an explicit search action (e.g. timestamp button set
+        # video_player and called st.rerun()). Restore cached results so the
+        # source cards — and their Go-to-Timestamp buttons — remain visible.
+        results = st.session_state.search_results_cache
+
+    if results is not None:
         if not results:
             st.info("No results found. Try a different query or broaden your search terms.")
         else:
             above = [r for r in results if not r.below_threshold]
             below = [r for r in results if r.below_threshold]
 
+            # Prominent stats bar
+            above_txt = f'<span class="stat-val above-val">{len(above)}</span> above threshold'
+            below_txt = f'<span class="stat-val below-val">{len(below)}</span> below threshold'
             st.markdown(
-                f'<div class="result-count">'
-                f'<strong>{len(results)}</strong> results — '
-                f'<strong>{len(above)}</strong> above threshold'
-                f'&nbsp;&middot;&nbsp;'
-                f'<strong>{len(below)}</strong> below threshold'
+                f'<div class="evidence-stats">'
+                f'\U0001f4ca&nbsp;<span class="stat-val">{len(results)}</span> results retrieved'
+                f'<span class="stat-sep">│</span>{above_txt}'
+                f'<span class="stat-sep">│</span>{below_txt}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
             if above:
-                st.markdown("##### ✅ Above Threshold")
+                st.markdown("##### ✅ Above Threshold — strong evidence")
                 for i, r in enumerate(above):
-                    _render_source_card(r, i + 1, group_id="srch")
+                    _render_source_card(r, i + 1, group_id=f"srch_{i}")
 
             if below:
-                st.markdown("##### ⚠️ Below Threshold (weak match)")
+                st.markdown("##### ⚠️ Below Threshold — weak match")
                 for i, r in enumerate(below):
-                    _render_source_card(r, i + 1, show_below_threshold=True, group_id="srchb")
+                    _render_source_card(r, i + 1, show_below_threshold=True, group_id=f"srchb_{i}")
 
     elif not search_query:
         # ── Welcome card + example queries ────────────────────────────────────
