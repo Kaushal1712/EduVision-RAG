@@ -674,10 +674,13 @@ def _render_search_tab(search_fn, video_filter: str):
     """Render the evidence-search tab (retrieval only, no LLM)."""
 
     # Consume search_prefill BEFORE the text_input widget is instantiated.
-    # Writing to a widget's session-state key after it already exists raises
-    # StreamlitAPIException. Using value= here is safe because the widget
-    # has not yet been created this rerun.
+    # For a keyed widget, st.session_state[key] is always authoritative —
+    # value= is ignored when the key already exists. So we must overwrite
+    # st.session_state.search_input directly here, before the widget is
+    # created, which is safe and does not raise StreamlitAPIException.
     _search_initial = st.session_state.pop("search_prefill", "")
+    if _search_initial:
+        st.session_state.search_input = _search_initial
 
     col_input, col_btn = st.columns([5, 1])
     with col_input:
@@ -685,7 +688,6 @@ def _render_search_tab(search_fn, video_filter: str):
             label="search_query",
             placeholder="Search transcript evidence… e.g. 'HTML structure'",
             label_visibility="collapsed",
-            value=_search_initial,
             key="search_input",
         )
     with col_btn:
