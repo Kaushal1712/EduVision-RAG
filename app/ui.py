@@ -20,6 +20,14 @@ import os
 import time
 from pathlib import Path
 
+# ── Ensure project root is on sys.path ───────────────────────────────────────
+# Must happen BEFORE any local-package imports (config, pipeline, etc.)
+# so that both local development (run from app/) and Streamlit Cloud
+# (run from repo root) can resolve the config/ and pipeline.py packages.
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from config.settings import (
     VIDEOS_DIR,
     SIMILARITY_THRESHOLD,
@@ -27,13 +35,8 @@ from config.settings import (
     MAX_LLM_EVIDENCE,
 )
 
-# ── Ensure project root is on sys.path so pipeline.py is importable ──────────
-# When running from app/, the project root is one level up.
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
 import streamlit as st
+
 
 # ── Deployment safety flag ────────────────────────────────────────────────────
 # True when the local videos/ directory exists (development / local run).
