@@ -58,56 +58,49 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Chat composer + Search input — unified pill style ────────────────────
-   Both use a shared .composer-bar CSS class so they look like one
-   coherent design system rather than default Streamlit forms.
-   The composer bar wraps a text_input and a Send button as one unit. */
-.composer-bar {
-    display: flex;
-    align-items: stretch;
+/* ── Composer pill — Chat + Search input rows ─────────────────────────────────
+   WHY :has() instead of a wrapper div:
+   st.markdown('<div>') creates an HTML sibling, NOT a parent, for
+   subsequent st.columns() calls. The div renders as a visible empty
+   box. CSS :has() lets us target the Streamlit-rendered
+   stHorizontalBlock that *actually contains* the text input.
+   Supported in all modern browsers (Chrome 105+, Firefox 121+, Safari 15.4+). */
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) {
     background: #1A1C2E;
     border: 1px solid #2E3158;
     border-radius: 12px;
-    padding: 6px 6px 6px 14px;
+    padding: 5px 6px 5px 12px !important;
     margin-top: 8px;
-    gap: 6px;
+    gap: 6px !important;
+    align-items: center !important;
 }
-/* Collapse the gap Streamlit injects between columns inside .composer-bar */
-.composer-bar [data-testid="column"] {
-    padding: 0 !important;
-    gap: 0 !important;
-}
-.composer-bar [data-testid="stHorizontalBlock"] {
-    gap: 0 !important;
-    align-items: center;
-}
-/* Text input inside the bar: transparent, no border */
-.composer-bar .stTextInput > div > div {
+/* Text input inside the pill: transparent, no own border */
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stTextInput > div > div,
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stTextInput > div > div:focus-within {
     background: transparent !important;
     border: none !important;
-    border-radius: 0 !important;
     box-shadow: none !important;
+    border-radius: 0 !important;
     padding: 0 !important;
 }
-.composer-bar .stTextInput input {
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stTextInput input {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     color: #E8EAF6 !important;
-    font-size: 0.95em !important;
+    font-size: 0.94em !important;
     padding: 4px 0 !important;
 }
-.composer-bar .stTextInput input:focus {
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stTextInput input:focus {
     outline: none !important;
     box-shadow: none !important;
 }
-/* Send button inside the bar: compact pill */
-.composer-bar .stButton button {
+/* Send / Search button inside the pill */
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stButton button {
     border-radius: 8px !important;
     padding: 4px 14px !important;
-    font-size: 1em !important;
     height: 36px !important;
-    min-width: 44px;
+    min-width: 42px;
 }
 
 /* ── Misc ──────────────────────────────────────────────────────────────────*/
@@ -664,14 +657,21 @@ def _render_chat_tab(ask_fn, video_filter: str):
     # history. We use st.text_input() + Send button in normal document flow
     # so the composer sits naturally at the bottom of the conversation.
     #
-    # IMPORTANT: consume chat_prefill into st.session_state.chat_composer
-    # BEFORE creating the widget — assigning to a keyed widget's session_state
-    # key after widget creation raises StreamlitAPIException.
+    # State rules (both enforced pre-widget, never post-widget):
+    # 1. chat_prefill: consumed via pop() and written to chat_composer BEFORE
+    #    the widget so example buttons pre-fill the input without exception.
+    # 2. chat_composer_clear: consumed via pop() and clears chat_composer
+    #    BEFORE the widget so the field empties after a submission.
+    if st.session_state.pop("chat_composer_clear", False):
+        st.session_state.chat_composer = ""   # safe: widget not yet created
     _chat_prefill = st.session_state.pop("chat_prefill", "")
     if _chat_prefill:
         st.session_state.chat_composer = _chat_prefill  # safe: widget not yet created
 
-    st.markdown('<div class="composer-bar">', unsafe_allow_html=True)
+    # No st.markdown wrapper div — it renders as a visible empty element
+    # because Streamlit's columns() output is a sibling in the DOM tree,
+    # not a child of any markdown-injected div. The unified pill look is
+    # achieved via CSS :has([data-testid="stTextInput"]) on stHorizontalBlock.
     _col_inp, _col_btn = st.columns([9, 1])
     with _col_inp:
         raw_input = st.text_input(
@@ -688,17 +688,19 @@ def _render_chat_tab(ask_fn, video_filter: str):
             help="Send question",
             type="primary",
         )
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Resolve the query from Send button click.
-    # NOTE: NEVER assign st.session_state.chat_composer after this point.
+    # Resolve the query: Send button OR example-button prefill.
+    # NEVER assign st.session_state.chat_composer after this point.
     query: str = ""
     if send_clicked and raw_input.strip():
         query = raw_input.strip()
+        # Schedule the composer to clear on the next rerun (pre-widget, safe).
+        st.session_state.chat_composer_clear = True
     elif _chat_prefill and not send_clicked:
-        # Example button was clicked: chat_prefill was pre-loaded into the
-        # widget above; treat it as the submitted query immediately.
+        # Example button: prefill was already loaded into the widget above;
+        # treat it as the submitted query and clear for next rerun.
         query = _chat_prefill
+        st.session_state.chat_composer_clear = True
 
     if query:
         # ── Session question limit ─────────────────────────────────────────────
@@ -815,7 +817,8 @@ def _render_search_tab(search_fn, video_filter: str):
     if _search_initial:
         st.session_state.search_input = _search_initial
 
-    st.markdown('<div class="composer-bar">', unsafe_allow_html=True)
+    # No st.markdown wrapper div — same reason as chat composer.
+    # The pill style is applied via CSS :has() on stHorizontalBlock.
     col_input, col_btn = st.columns([8, 1])
     with col_input:
         search_query = st.text_input(
@@ -826,7 +829,6 @@ def _render_search_tab(search_fn, video_filter: str):
         )
     with col_btn:
         search_clicked = st.button("Search", use_container_width=True, type="primary")
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # search_auto_submit is set by example buttons so they trigger an immediate search.
     auto_submit = st.session_state.get("search_auto_submit", False)
