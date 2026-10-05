@@ -3,8 +3,9 @@
 # ─────────────────────────────────────────────────────────────
 # Install with:  pip install -r requirements.txt
 #
-# All versions are pinned to the environment verified at Stage 15
-# (17/17 PASS on the full evaluation suite).
+# All versions are pinned for the finalized Stage 2.6 system (Whisper
+# large-v2 translate index, BGE-M3, ChromaDB, GPT-4o-mini). See README.md
+# and docs/EVALUATION.md for the current verification status.
 #
 # Note: FFmpeg is a system binary — install separately:
 #   macOS:  brew install ffmpeg
@@ -17,7 +18,7 @@
 python-dotenv==1.2.3          # load .env into os.environ
 
 # ── Stage 3 — Whisper transcription ──────────────────────────
-openai-whisper==20250625      # OpenAI Whisper for timestamped ASR (base + medium)
+openai-whisper==20250625      # OpenAI Whisper for timestamped ASR (large-v2, task translate)
 torch==2.13.0                 # PyTorch backend for Whisper and FlagEmbedding
 
 # ── Stage 6 — BGE-M3 embeddings ──────────────────────────────

@@ -282,7 +282,7 @@ def retrieve(
         video_id_filter:     If set, restrict search to one specific video.
                              Useful for "find this in Tutorial #1" queries.
         collection_name:     If set, query this named collection instead of the
-                             default (used to query v2 collection for comparison).
+                             default (settings.ACTIVE_COLLECTION).
 
     Returns:
         List of RetrievalResult, sorted by similarity descending (rank 1 = best).

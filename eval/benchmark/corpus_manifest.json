@@ -1,0 +1,132 @@
+{
+  "description": "Identity of the videos the benchmark's gold timestamps refer to. video_id is derived from the .mp4 filename by ingestion/video_processor.py and is what retrieval returns; sha256 pins the exact video file, so gold timestamps stay valid across re-transcription/re-chunking but must be re-checked if a video file is replaced or re-encoded. duration_s is the ffprobe duration recorded at ingestion.",
+  "generated_by": "python eval/bench_tools.py manifest",
+  "videos": [
+    {
+      "video_id": "01_installing_vs_code_how_websites_work_sigma_web_development_course_tutorial_1",
+      "tutorial_number": 1,
+      "video_filename": "01_Installing VS Code & How Websites Work ｜ Sigma Web Development Course - Tutorial #1.mp4",
+      "duration_s": 1879.423,
+      "sha256": "9266b9a0cd651a02f8d658c65ed3bc024eede3f2dbbbc3b4c353013c9591e43f"
+    },
+    {
+      "video_id": "02_your_first_html_website_sigma_web_development_course_tutorial_2",
+      "tutorial_number": 2,
+      "video_filename": "02_Your First HTML Website ｜ Sigma Web Development Course - Tutorial #2.mp4",
+      "duration_s": 1710.335,
+      "sha256": "15c891e1ed6f2117fd8a6e8fc0961c57237ff9122488b58017ddb8f324b83f75"
+    },
+    {
+      "video_id": "03_basic_structure_of_an_html_website_sigma_web_development_course_tutorial_3",
+      "tutorial_number": 3,
+      "video_filename": "03_Basic Structure of an HTML Website ｜ Sigma Web Development Course - Tutorial #3.mp4",
+      "duration_s": 671.382,
+      "sha256": "e5bf0863be909939813640b4617f57271e0773fac1c88f5b66d8d725f01c01fc"
+    },
+    {
+      "video_id": "04_heading_paragraphs_and_links_sigma_web_development_course_tutorial_4",
+      "tutorial_number": 4,
+      "video_filename": "04_Heading, Paragraphs and Links ｜ Sigma Web Development Course - Tutorial #4.mp4",
+      "duration_s": 1173.978,
+      "sha256": "117dd105621b34d0983a4df7887d1d1f22a1c8bcfff4f48bc031fdad836a32e5"
+    },
+    {
+      "video_id": "05_image_lists_and_tables_in_html_sigma_web_development_course_tutorial_5",
+      "tutorial_number": 5,
+      "video_filename": "05_Image, Lists, and Tables in HTML ｜ Sigma Web Development Course - Tutorial #5.mp4",
+      "duration_s": 1099.836,
+      "sha256": "efbdca0b90a32a8bdc52f83ad18f4c86215ca2e314cce3975ec272a0ee789894"
+    },
+    {
+      "video_id": "06_seo_and_core_web_vitals_in_html_sigma_web_development_course_tutorial_6",
+      "tutorial_number": 6,
+      "video_filename": "06_SEO and Core Web Vitals in HTML ｜ Sigma Web Development Course - Tutorial #6.mp4",
+      "duration_s": 795.191,
+      "sha256": "74968349e885a5f52c6abda960dddb62c3ca41ef10d4e7e9ae3181e0d996a50e"
+    },
+    {
+      "video_id": "07_forms_and_input_tags_in_html_sigma_web_development_course_tutorial_7",
+      "tutorial_number": 7,
+      "video_filename": "07_Forms and input tags in HTML ｜ Sigma Web Development Course - Tutorial #7.mp4",
+      "duration_s": 893.016,
+      "sha256": "f29f9bc05fd9f09e3257c46267f3be4b590023ef71f4b8a762d890e1587c4fc1"
+    },
+    {
+      "video_id": "08_inline_block_elements_in_html_sigma_web_development_course_tutorial_8",
+      "tutorial_number": 8,
+      "video_filename": "08_Inline & Block Elements in HTML ｜ Sigma Web Development Course - Tutorial #8.mp4",
+      "duration_s": 651.622,
+      "sha256": "7a57df311969f53708603607e6a0e05d6bb29fe0b11726b2ae5849b59ff63d73"
+    },
+    {
+      "video_id": "09_id_classes_in_html_sigma_web_development_course_tutorial_9",
+      "tutorial_number": 9,
+      "video_filename": "09_Id & Classes in HTML ｜ Sigma Web Development Course - Tutorial #9.mp4",
+      "duration_s": 656.707,
+      "sha256": "23dfd65887b98a8429f55f4ff52300b596aed1f1f93f16f530be0f920ca19b01"
+    },
+    {
+      "video_id": "10_video_audio_media_in_html_sigma_web_development_course_tutorial_10",
+      "tutorial_number": 10,
+      "video_filename": "10_Video, Audio & Media in HTML ｜ Sigma Web Development Course - Tutorial #10.mp4",
+      "duration_s": 887.072,
+      "sha256": "c53b52235862c9c8c14fd07b9dbb41ae08e69566003a45b06702b8e8eaf57830"
+    },
+    {
+      "video_id": "11_semantic_tags_in_html_sigma_web_development_course_tutorial_11",
+      "tutorial_number": 11,
+      "video_filename": "11_Semantic Tags  in HTML ｜ Sigma Web Development Course - Tutorial #11.mp4",
+      "duration_s": 641.033,
+      "sha256": "c846bdd4a501f714d2727febe40a88431d25b3b7a2b29b27823fe50063ae1381"
+    },
+    {
+      "video_id": "12_exercise_1_pure_html_media_player_sigma_web_development_course_tutorial_12",
+      "tutorial_number": 12,
+      "video_filename": "12_Exercise 1 - Pure HTML Media Player ｜ Sigma Web Development Course - Tutorial #12.mp4",
+      "duration_s": 220.775,
+      "sha256": "2e13f097eadc2d115e4ae93117167e5427fe81515395edd064623f0f75a0df59"
+    },
+    {
+      "video_id": "13_entities_code_tag_and_more_on_html_sigma_web_development_course_tutorial_13",
+      "tutorial_number": 13,
+      "video_filename": "13_Entities, Code tag and more on HTML ｜ Sigma Web Development Course - Tutorial #13.mp4",
+      "duration_s": 560.855,
+      "sha256": "db41f5bc77b99cba8af6fe3db3ab74006068c7b461c65e25a0a33ac92bb1e768"
+    },
+    {
+      "video_id": "14_introduction_to_css_sigma_web_development_course_tutorial_14",
+      "tutorial_number": 14,
+      "video_filename": "14_Introduction to CSS ｜ Sigma Web Development Course - Tutorial #14.mp4",
+      "duration_s": 553.982,
+      "sha256": "6d7a04c0e03b5a3713e70d720888c9a33bd1632167ccf6c9a5ac1980939be4f2"
+    },
+    {
+      "video_id": "15_inline_internal_external_css_sigma_web_development_course_tutorial_15",
+      "tutorial_number": 15,
+      "video_filename": "15_Inline, Internal & External CSS ｜ Sigma Web Development Course - Tutorial #15.mp4",
+      "duration_s": 663.673,
+      "sha256": "600b4d133b7242df62c9b0e6310301a16d1e8eb823c736f1264a7fcc112f3656"
+    },
+    {
+      "video_id": "16_exercise_1_solution_shoutouts_sigma_web_development_course_tutorial_16",
+      "tutorial_number": 16,
+      "video_filename": "16_Exercise 1 - Solution & Shoutouts ｜ Sigma Web Development Course - Tutorial #16.mp4",
+      "duration_s": 438.555,
+      "sha256": "2e58c248e51e93ffaf1508466099fa763fd53e148da6e536782d3483a5b5fb04"
+    },
+    {
+      "video_id": "17_css_selectors_masterclass_sigma_web_development_course_tutorial_17",
+      "tutorial_number": 17,
+      "video_filename": "17_CSS Selectors MasterClass ｜ Sigma Web Development Course - Tutorial #17.mp4",
+      "duration_s": 839.053,
+      "sha256": "baaa86ae43386b3c2d9bc82663a7dd7975c76fd58e36fa042da9922df36268fd"
+    },
+    {
+      "video_id": "18_css_box_model_margin_padding_borders_sigma_web_development_course_tutorial_18",
+      "tutorial_number": 18,
+      "video_filename": "18_CSS Box Model - Margin, Padding & Borders ｜ Sigma Web Development Course - Tutorial #18.mp4",
+      "duration_s": 1060.386,
+      "sha256": "d4c734b3fbe2690ef491ad94b9ed5c314c97d3181a679beef65c201f82aa1496"
+    }
+  ]
+}

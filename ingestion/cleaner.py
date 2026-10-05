@@ -84,6 +84,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import TRANSCRIPTS_DIR
+from ingestion.build_safety import require_not_older_than
 from ingestion.transcriber import TranscriptSegment, TranscriptResult, load_transcript
 
 logger = logging.getLogger(__name__)
@@ -407,6 +408,7 @@ def clean_all_transcripts(
                 "Cleaned transcript already exists, loading from disk: %s",
                 cleaned_path.name,
             )
+            require_not_older_than(cleaned_path, [tr.transcript_path], "cleaned transcript")
             ct = load_cleaned_transcript(tr.video_id)
             if ct:
                 results.append(ct)

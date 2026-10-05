@@ -1,0 +1,4 @@
+# Annotation-aid transcripts of course audio: regenerate with
+# `python eval/bench_tools.py asr`; not committed.
+*
+!.gitignore

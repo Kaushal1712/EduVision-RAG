@@ -1,0 +1,4 @@
+# Stage 2 experiment artifacts (transcripts, chunks, embeddings, indexes);
+# regenerate with build_candidate.py. Not committed.
+*
+!.gitignore

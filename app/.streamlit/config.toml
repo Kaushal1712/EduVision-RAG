@@ -8,7 +8,9 @@ font            = "sans serif"
 
 [server]
 headless        = true
-enableCORS      = false
+# enableCORS is left at Streamlit's default (true). Setting it to false makes Streamlit send
+# Access-Control-Allow-Origin: * and accept WebSocket connections from any origin, so any site
+# could drive the app (and spend the OpenAI key). For extra origins use server.corsAllowedOrigins.
 
 [browser]
 gatherUsageStats = false

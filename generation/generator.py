@@ -107,8 +107,8 @@ logger = logging.getLogger(__name__)
 # Sentinel used to detect the placeholder API key from .env
 _PLACEHOLDER_KEY = "your-openai-api-key-here"
 
-# Number of above-threshold results to include in the prompt.
-# Keeping to 5 matches TOP_K_RESULTS and fits well within context limits.
+# Default number of above-threshold results to include in the prompt. pipeline.ask() passes
+# settings.MAX_LLM_EVIDENCE (5, Stage 2.6); retrieval itself fetches RETRIEVAL_TOP_K (10).
 MAX_EVIDENCE_CHUNKS = 5
 
 
@@ -196,6 +196,10 @@ Rules you MUST follow:
 6. If multiple evidence chunks are relevant, synthesise them into one coherent answer.
 7. When the Prior context section contains a relevant previous answer, you may build on
    it to answer follow-up questions, re-using the timestamp citations already given.
+8. Before answering, check that the Evidence (or Prior context) actually explains what the question asks.
+   If it only mentions the topic, or explains a related but different topic (for example a different tool,
+   technique or task than the one asked about), respond with exactly the not-found sentence from rule 3.
+   Do not fill gaps with steps, code or facts from general knowledge.
 """
 
 def _build_user_message(

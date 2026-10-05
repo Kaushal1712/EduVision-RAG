@@ -84,6 +84,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import PROCESSED_DIR, TRANSCRIPTS_DIR
+from ingestion.build_safety import require_not_older_than
 from ingestion.cleaner import CleanedTranscript, TranscriptSegment, load_cleaned_transcript
 
 logger = logging.getLogger(__name__)
@@ -353,6 +354,7 @@ def chunk_transcript(
             "(use force=True to re-chunk)",
             path.name,
         )
+        require_not_older_than(path, [cleaned.cleaned_path], "chunk file")
         loaded = load_chunks(cleaned.video_id)
         if loaded is not None:
             return loaded

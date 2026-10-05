@@ -11,8 +11,9 @@ ChromaDB was chosen because:
 
   1. Embedded, no server needed: runs entirely in-process.
      No Docker, no separate process to manage. The entire DB
-     is a directory on disk (data/vector_db/) opened by both
-     the indexer (write) and the retriever (read).
+     is a directory on disk: the retriever reads settings.CHROMA_DB_PATH
+     (data/vector_db_lv2g_translate/); index builds write only to an explicit,
+     non-production --db-path (ingestion/build_safety.py, ingestion/REBUILD.md).
 
   2. Persistent: data survives process restarts.
      chromadb.PersistentClient(path=...) — SQLite-backed storage.
@@ -103,6 +104,7 @@ import chromadb
 from chromadb.config import Settings
 
 from config.settings import CHROMA_DB_PATH, CHROMA_COLLECTION_NAME, PROCESSED_DIR
+from ingestion.build_safety import require_build_index_dir
 from ingestion.chunker import Chunk, load_chunks
 from ingestion.embedder import load_embeddings
 
@@ -116,8 +118,9 @@ INDEX_BATCH_SIZE: int = 50   # documents per upsert call
 
 def get_chroma_client() -> chromadb.PersistentClient:
     """
-    Return a ChromaDB PersistentClient backed by data/vector_db/.
+    Return a ChromaDB PersistentClient for the runtime index (settings.CHROMA_DB_PATH).
 
+    Used for reading at runtime; build_index() writes only to an explicit db_path.
     The client opens (or creates) the SQLite database in CHROMA_DB_PATH.
     All writes are immediately persisted — no explicit flush needed.
     """
@@ -230,6 +233,8 @@ def build_index(
     chunks_map: dict[str, list[Chunk]],
     embeddings_map: dict[str, dict[str, list[float]]],
     force: bool = False,
+    *,
+    db_path: str,
 ) -> chromadb.Collection:
     """
     Build (or rebuild) the ChromaDB index from all chunks and embeddings.
@@ -242,11 +247,15 @@ def build_index(
         chunks_map:     Dict of video_id → list[Chunk].
         embeddings_map: Dict of video_id → {chunk_id → embedding}.
         force:          If True, delete and rebuild the collection.
+        db_path:        Explicit output directory. Checked by
+                        build_safety.require_build_index_dir: the production indexes
+                        and the runtime CHROMA_DB_PATH are refused.
 
     Returns:
         The ChromaDB collection (ready for queries).
     """
-    client = get_chroma_client()
+    target = require_build_index_dir(db_path)
+    client = chromadb.PersistentClient(path=str(target), settings=Settings(anonymized_telemetry=False))
 
     expected_total = sum(len(v) for v in chunks_map.values())
 
@@ -337,12 +346,15 @@ if __name__ == "__main__":
     )
 
     force_flag = "--force" in sys.argv
+    # Explicit output directory (required): python ingestion/indexer.py --db-path <dir> [--force]
+    db_path_arg = sys.argv[sys.argv.index("--db-path") + 1] if "--db-path" in sys.argv[:-1] else None
+    build_target = require_build_index_dir(db_path_arg)
 
     print("=" * 60)
     print("EduVision RAG — Stage 7: ChromaDB Indexing")
     print("=" * 60)
     print(f"Collection : {CHROMA_COLLECTION_NAME}")
-    print(f"DB path    : {CHROMA_DB_PATH}")
+    print(f"DB path    : {build_target}")
     print(f"Force      : {force_flag}")
     print()
 
@@ -373,7 +385,7 @@ if __name__ == "__main__":
     print()
 
     # ── Build index ───────────────────────────────────────────────────────────
-    collection = build_index(chunks_map, embeddings_map, force=force_flag)
+    collection = build_index(chunks_map, embeddings_map, force=force_flag, db_path=str(build_target))
 
     # ── Verification suite ────────────────────────────────────────────────────
     print(f"\n{'='*60}")
@@ -512,5 +524,5 @@ if __name__ == "__main__":
             print(f"    ERROR: {e}")
     print(f"  Collection name    : {CHROMA_COLLECTION_NAME}")
     print(f"  Total documents    : {actual_count}")
-    print(f"  DB path            : {CHROMA_DB_PATH}")
+    print(f"  DB path            : {build_target}")
     print(f"{'='*60}")

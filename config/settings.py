@@ -24,23 +24,52 @@ VIDEOS_DIR: Path = ROOT_DIR / "videos"
 DATA_DIR: Path = ROOT_DIR / "data"
 TRANSCRIPTS_DIR: Path = DATA_DIR / "transcripts"
 PROCESSED_DIR: Path = DATA_DIR / "processed"
+# Previous production index (Whisper base, collections v1/v2). Kept unchanged for rollback.
 VECTOR_DB_DIR: Path = DATA_DIR / "vector_db"
+# Production index: the Stage 2.6 locked selection (collection lv2g_translate, 1,391 chunks,
+# see experiments/stage2_6_abstention/locked_selection.json).
+STAGE26_VECTOR_DB_DIR: Path = DATA_DIR / "vector_db_lv2g_translate"
+
+
+def _project_path(value: str) -> str:
+    """
+    Absolute form of a path setting. Relative values are resolved against ROOT_DIR, so the
+    result does not depend on the working directory the app or a script is started from.
+    """
+    path = Path(value).expanduser()
+    return str(path if path.is_absolute() else (ROOT_DIR / path).resolve())
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    return default if value is None else value.strip().lower() in ("1", "true", "yes", "on")
+
 
 # ── Transcription ─────────────────────────────────────────────────────────────
-WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
+# Stage 2.6 decoding (the settings the shipped index was transcribed with; first run by
+# experiments/stage2_transcription/build_candidate.py --greedy): large-v2, task translate,
+# greedy temperature 0 without fallback, no conditioning on previous text.
+# Whisper's own defaults (the pre-Stage-2 production behaviour) are: task transcribe,
+# WHISPER_TEMPERATURE_FALLBACK=true and WHISPER_CONDITION_ON_PREVIOUS_TEXT=true.
+WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
+WHISPER_TASK: str = os.getenv("WHISPER_TASK", "translate")
+WHISPER_TEMPERATURE: float = float(os.getenv("WHISPER_TEMPERATURE", "0.0"))
+WHISPER_TEMPERATURE_FALLBACK: bool = _env_bool("WHISPER_TEMPERATURE_FALLBACK", False)
+WHISPER_CONDITION_ON_PREVIOUS_TEXT: bool = _env_bool("WHISPER_CONDITION_ON_PREVIOUS_TEXT", False)
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 BGE_MODEL: str = os.getenv("BGE_MODEL", "BAAI/bge-m3")
 
 # ── Vector database ───────────────────────────────────────────────────────────
-CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", str(VECTOR_DB_DIR))
+CHROMA_DB_PATH: str = _project_path(os.getenv("CHROMA_DB_PATH", str(STAGE26_VECTOR_DB_DIR)))
 CHROMA_COLLECTION_NAME: str = "eduvision_chunks"          # v1 (original)
 CHROMA_COLLECTION_NAME_V2: str = "eduvision_chunks_v2"    # v2 (English-normalised)
+CHROMA_COLLECTION_NAME_LV2G: str = "lv2g_translate"       # Stage 2.6 (Whisper large-v2 translate)
 
 # ACTIVE_COLLECTION: which collection the pipeline uses for all queries.
-# Set to v2 to enable English-normalised retrieval + quality filtering.
-# Revert to CHROMA_COLLECTION_NAME to restore v1 behaviour.
-ACTIVE_COLLECTION: str = os.getenv("ACTIVE_COLLECTION", CHROMA_COLLECTION_NAME_V2)
+# Rollback to the previous production index: CHROMA_DB_PATH=data/vector_db and
+# ACTIVE_COLLECTION=eduvision_chunks_v2 (and SIMILARITY_THRESHOLD=0.50).
+ACTIVE_COLLECTION: str = os.getenv("ACTIVE_COLLECTION", CHROMA_COLLECTION_NAME_LV2G)
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 # RETRIEVAL_TOP_K: how many chunks to fetch from ChromaDB per query.
@@ -52,15 +81,15 @@ RETRIEVAL_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "10"))
 # Kept at 5 — enough context for grounded answers without inflating prompt tokens.
 MAX_LLM_EVIDENCE: int = int(os.getenv("MAX_LLM_EVIDENCE", "5"))
 
-# Backward-compatible alias (used in older code paths).
+# Backward-compatible alias of RETRIEVAL_TOP_K for older code paths (retriever defaults).
+# It is not read from the environment; set RETRIEVAL_TOP_K instead.
 TOP_K_RESULTS: int = RETRIEVAL_TOP_K
 
-# SIMILARITY_THRESHOLD: empirically calibrated against 2-video corpus (2026-08-28)
-#   Relevant queries (HTML, VS Code install, etc.) → top-1 sim: 0.60 – 0.70
-#   Irrelevant queries (France, chocolate, USA)    → top-1 sim: 0.38 – 0.48
-#   Midpoint = 0.54  →  using 0.50 for a comfortable margin.
-#   Results below threshold are flagged (not dropped) by the retriever.
-SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.50"))
+# SIMILARITY_THRESHOLD: Stage 2.6 locked selection (0.44), chosen on DEV as the midpoint of the
+# plateau with zero in-scope gate refusals and unchanged out-of-scope gate decisions
+# (experiments/stage2_6_abstention/locked_selection.json). It is both the no-LLM refusal gate
+# and the per-chunk evidence filter; results below it are flagged (not dropped) by the retriever.
+SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.44"))
 
 # ── OpenAI / LLM ──────────────────────────────────────────────────────────────
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -92,9 +121,12 @@ if __name__ == "__main__":
     print(f"PROCESSED_DIR     : {PROCESSED_DIR}")
     print(f"VECTOR_DB_DIR     : {VECTOR_DB_DIR}")
     print(f"WHISPER_MODEL     : {WHISPER_MODEL}")
+    print(f"WHISPER_TASK      : {WHISPER_TASK}  temperature {WHISPER_TEMPERATURE} "
+          f"fallback {WHISPER_TEMPERATURE_FALLBACK}  condition_on_previous_text {WHISPER_CONDITION_ON_PREVIOUS_TEXT}")
     print(f"BGE_MODEL         : {BGE_MODEL}")
     print(f"CHROMA_DB_PATH    : {CHROMA_DB_PATH}")
-    print(f"TOP_K_RESULTS     : {TOP_K_RESULTS}")
+    print(f"ACTIVE_COLLECTION : {ACTIVE_COLLECTION}")
+    print(f"RETRIEVAL_TOP_K   : {RETRIEVAL_TOP_K}")
     print(f"SIMILARITY_THRESHOLD : {SIMILARITY_THRESHOLD}")
     print(f"OPENAI_MODEL      : {OPENAI_MODEL}")
     print(f"SEGMENTS_PER_CHUNK: {SEGMENTS_PER_CHUNK}")

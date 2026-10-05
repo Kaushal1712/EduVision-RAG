@@ -549,7 +549,7 @@ def search(
 def list_indexed_videos() -> list[tuple[str, str]]:
     """
     Return a sorted list of (video_id, display_label) for every distinct video
-    currently indexed in the active ChromaDB v2 collection.
+    currently indexed in the active ChromaDB collection (settings.ACTIVE_COLLECTION).
 
     display_label format: "Tutorial #N — <Human Title>"
     e.g.  "Tutorial #3 — Basic Structure of an HTML Website"

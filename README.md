@@ -1,78 +1,34 @@
 # EduVision RAG — Video Teaching Assistant
 
-> Ask natural-language questions about video course material and receive grounded answers with exact transcript evidence — then jump directly to the cited moment in the video.
+> Ask questions about a video course, get answers grounded in the lecture transcripts with
+> `[Video @ MM:SS]` citations, inspect the retrieved evidence, and jump to the cited moment in the video.
 
-EduVision RAG is a production-quality retrieval-augmented generation pipeline built around lecture videos. It provides two independently usable retrieval experiences: a conversational Q&A interface backed by GPT-4o-mini, and a retrieval transparency tool that exposes ranked transcript evidence without LLM involvement. Every answer cites the exact video timestamp it came from.
+EduVision is a retrieval-augmented generation (RAG) system over 18 lecture videos (Sigma Web
+Development Course, tutorials 1–18: HTML and CSS; the spoken language is Hindi/Hinglish). Whisper
+translates the audio into timestamped English transcripts. BGE-M3 embeds the transcript chunks into ChromaDB.
+GPT-4o-mini answers only from retrieved evidence and refuses when the evidence does not cover the question.
+A Streamlit app has two tabs: **Ask a Question** (RAG answers) and **Search Evidence** (retrieval only, no LLM).
+
+**Status (2026-10-05):** production runs the **Stage 2.6** configuration. It was selected on the DEV split
+of a timestamp-anchored benchmark, then evaluated once on the held-out TEST split. The evaluation journey
+and full results are in [docs/EVALUATION.md](docs/EVALUATION.md). All benchmark labels and judgements are
+AI-produced, not human-verified (see [Known limitations](#known-limitations)).
 
 ---
 
-## Key Features
+## Features
 
-| Feature | Description |
+| Feature | What it does |
 |---|---|
-| **Ask a Question** | Conversational RAG — GPT-4o-mini answers exclusively from retrieved transcript evidence with `[Video @ MM:SS]` citations |
-| **Search Evidence** | Retrieval-only inspection tool — surfaces ranked transcript chunks with similarity scores, no LLM generation |
-| **Go-to-Timestamp** | Clicking any source card seeks the local video player to the exact start time of the retrieved chunk |
-| **Contextual Follow-ups** | Ambiguous follow-ups (e.g. "why is it important?") are rewritten into self-contained retrieval queries before embedding |
-| **Grounded Generation** | The LLM is constrained to answer only from retrieved evidence; refuses when evidence is insufficient |
-| **Retrieval Transparency** | Similarity scores and threshold grouping are shown for every result in both tabs |
-| **English Normalization** | Non-English transcript chunks are translated to English by GPT-4o-mini; `text_raw` is preserved for provenance |
-| **Confidence Guardrails** | Below-threshold chunks are surfaced separately and excluded from generation; not-found state is handled explicitly |
-| **Dynamic Video Catalogue** | Video filter and corpus stats are derived from ChromaDB metadata at runtime — no hardcoded lists |
-
----
-
-## Why EduVision RAG?
-
-Traditional RAG systems produce an answer and a list of text snippets. EduVision connects retrieval directly back to the original course material:
-
-```
-User Question
-  → Contextual Query Rewriting       (pronoun/context disambiguation)
-  → BGE-M3 Query Embedding           (1024-dimensional dense vector)
-  → ChromaDB Retrieval               (top-10 candidates by cosine similarity)
-  → Similarity Threshold Filtering   (0.50 cutoff)
-  → GPT-4o-mini Grounded Generation  (answers from evidence only)
-  → Answer + [Video @ MM:SS] Citations
-  → Go-to-Timestamp playback         (st.video at exact start_time)
-```
-
-The key differentiator: every fact in the answer links back to the precise second in the original video where it was taught. A viewer can read the answer, inspect the raw transcript evidence, and immediately watch the relevant portion of the lecture — without searching the video manually.
-
----
-
-## Two Retrieval Experiences
-
-### 💬 Ask a Question
-
-The primary RAG interface. The full pipeline runs end-to-end:
-
-```
-User Question
-  → Contextual Query Rewriting
-  → BGE-M3 Query Embedding
-  → ChromaDB Retrieval (top-10)
-  → Evidence Filtering (≥ 0.50 similarity)
-  → GPT-4o-mini Grounded Generation (up to 5 evidence chunks)
-  → Answer + Citations + Timestamp Source Cards
-```
-
-Follow-up questions are supported. When a question contains pronouns or references to a previous answer (e.g. "how does it work?"), a lightweight GPT call rewrites it into a self-contained form for retrieval (e.g. "how does HTML work?"). The prior assistant answer is passed as explicit context to the generator.
-
-### 🔍 Search Evidence
-
-A retrieval transparency tool. **No LLM answer is generated.**
-
-```
-Search Query
-  → BGE-M3 Query Embedding
-  → ChromaDB Retrieval (top-10)
-  → Similarity Ranking
-  → Threshold Grouping (above / below 0.50)
-  → Ranked Transcript Chunks + Similarity Scores + Timestamps
-```
-
-Search Evidence allows the retrieval layer to be inspected independently from generation. It shows exactly which chunks the retrieval system would have returned for a query, with their raw similarity scores — useful for verifying corpus coverage, debugging retrieval quality, and demonstrating the system's factual grounding without making an LLM call.
+| **Video ingestion** | FFmpeg audio extraction → Whisper `large-v2` (task `translate`) → cleaning → 5-segment chunks → BGE-M3 embeddings → ChromaDB. Run offline; the app ships with a pre-built index. |
+| **Ask a Question (RAG Q&A)** | Retrieves the top 10 chunks and passes up to 5 that clear the 0.44 similarity threshold to GPT-4o-mini (temperature 0.2). The model answers from that evidence only. |
+| **Evidence** | Every answer shows its source cards: transcript text, video, `start → end` time range and similarity score. |
+| **Citations** | The model is instructed to cite every fact as `[Video: "<title>" @ MM:SS]`. On DEV, 100% of citations pointed at evidence the model was given (Stage 4 Z1). Not every sentence carries a citation (see limitations). |
+| **Go-to-Timestamp** | Each source card has a button that plays the local video from the chunk's `start_time`. Timestamps come from Whisper segment metadata, never from the LLM. The button is hidden when the video file is absent. |
+| **Follow-up questions** | A follow-up with a pronoun or reference ("why is *it* important?") is rewritten into a standalone retrieval query by a short GPT call (temperature 0). The generator also receives the prior answer as context. |
+| **Abstention** | Two layers. (1) If no retrieved chunk reaches 0.44 similarity, the app refuses **without calling the LLM**. (2) Prompt rule 8 makes the model refuse when the evidence only mentions the topic, or covers a different technique than the one asked about. Both layers produce the same sentence: *"I could not find this topic in the provided course material."* |
+| **Search Evidence** | Retrieval-only tab. It ranks transcript chunks with similarity scores, grouped above/below the threshold. No LLM call and no API key are needed. |
+| **Video filter** | The sidebar restricts retrieval to a single video. The catalogue is read from index metadata at runtime. |
 
 ---
 
@@ -80,304 +36,331 @@ Search Evidence allows the retrieval layer to be inspected independently from ge
 
 ```mermaid
 flowchart TB
-    subgraph OFFLINE["Offline — Ingestion Pipeline"]
-        V[".mp4 Videos"] --> FP["FFmpeg\naudio extraction"]
-        FP --> TR["Whisper\ntranscription + timestamps"]
-        TR --> CL["Transcript Cleaning\n& segmentation"]
-        CL --> CH["Chunker\n5 segments · 1 overlap"]
-        CH --> NM["English Normalization\nGPT-4o-mini · text_en / text_raw"]
-        NM --> EM["BGE-M3\n1024-dim embeddings"]
-        EM --> DB[("ChromaDB\neduvision_chunks_v2")]
+    subgraph OFFLINE["Offline — ingestion (see ingestion/REBUILD.md)"]
+        V[".mp4 videos (local)"] --> FF["FFmpeg<br/>audio extraction"]
+        FF --> W["Whisper large-v2<br/>task translate · greedy (temperature 0)<br/>condition_on_previous_text=False"]
+        W --> CL["Cleaner<br/>drop low-confidence / repetitive segments"]
+        CL --> CH["Chunker<br/>5 segments · overlap 1 · break on gaps > 5 s"]
+        CH --> QF["Quality filter<br/>(normalizer; no translation needed)"]
+        QF --> EM["BGE-M3 dense<br/>1024-dim"]
+        EM --> DB[("ChromaDB (cosine)<br/>lv2g_translate · 1,391 chunks")]
     end
 
-    subgraph ONLINE["Online — Query Pipeline"]
-        Q["User Question"] --> RW["Contextual Query Rewriting\n(follow-up disambiguation)"]
-        RW --> QE["BGE-M3\nquery embedding"]
-        QE --> RT["ChromaDB Retrieval\ntop-10 candidates"]
-        RT --> FIL["Evidence Filtering\n≥ 0.50 similarity"]
-        FIL --> GEN["GPT-4o-mini\ngrounded generation"]
-        GEN --> UI["Streamlit UI\nAnswer + Citations"]
-        UI --> TS["Go-to-Timestamp\nst.video at start_time"]
-
-        RT -->|"Search Evidence\n(no LLM)"| SE["Ranked Evidence\n+ Similarity Scores"]
+    subgraph ONLINE["Online — Streamlit app"]
+        Q["Question"] --> FU{"Follow-up with<br/>pronoun/reference?"}
+        FU -->|yes| RW["GPT-4o-mini rewrite<br/>(retrieval query only)"]
+        FU -->|no| QE
+        RW --> QE["BGE-M3 query embedding"]
+        QE --> RT["ChromaDB top-10"]
+        RT --> G{"any chunk ≥ 0.44?"}
+        G -->|no| NF["Not-found answer<br/>(no LLM call)"]
+        G -->|yes| EV["Up to 5 chunks ≥ 0.44<br/>(ranked order)"]
+        EV --> GEN["GPT-4o-mini · temp 0.2<br/>system prompt rules 1–8"]
+        GEN --> ANS["Answer + citations<br/>+ source cards"]
+        ANS --> TS["Go-to-Timestamp<br/>st.video(start_time)"]
+        RT -->|Search Evidence tab| SE["Ranked chunks + scores<br/>(no LLM)"]
     end
 
     DB --> RT
 ```
 
+### Online data flow (`pipeline.ask`)
+
+1. **Validate** the query (3–500 characters).
+2. **Follow-up rewrite** (`pipeline._rewrite_query_for_retrieval`). This step runs only when there is chat
+   history and the query matches a pronoun/reference pattern. A GPT-4o-mini call (temperature 0) rewrites the
+   query from the last two turns. If the call fails or there is no API key, the original query is used. The
+   rewritten text is used **only** for retrieval; the generator receives the original question.
+3. **Retrieve** (`retrieval/retriever.py`). The query is embedded with BGE-M3 (fp32). ChromaDB HNSW cosine
+   search returns the top 10 chunks, with similarity = 1 − cosine distance. Chunks below the threshold are
+   flagged, not dropped.
+4. **Gate and select evidence** (`generation/generator.py`). If no chunk is ≥ 0.44, the not-found answer is
+   returned without an LLM call. Otherwise the first 5 chunks that clear the threshold, in ranked order,
+   become the evidence.
+5. **Generate**: GPT-4o-mini, temperature 0.2, `MAX_TOKENS` 1024, `SYSTEM_PROMPT` with rules 1–8. Prior
+   context from the conversation is included for follow-ups.
+6. **Render** (`app/ui.py`). The app shows the answer, the source cards and the Go-to-Timestamp buttons.
+   Transcript text, titles and timestamps are HTML-escaped (`app/text_safety.py`) before they go into custom
+   HTML. Users see short, fixed error messages; full error details are only logged on the server.
+
+`app/ui.py` imports only `pipeline`. The pipeline imports retrieval and generation, plus
+`ingestion.indexer.get_chroma_client` for the ChromaDB client. Whisper and FlagEmbedding load lazily;
+Whisper is never loaded at runtime.
+
 ---
 
-## Corpus & Indexing
+## Production configuration (Stage 2.6)
 
-| Metric | Value |
+| Component | Setting |
 |---|---|
-| Course videos | 18 |
-| Whisper segments processed | — |
-| Embeddings generated | 1,528 |
-| Chunks indexed | 1,510 |
-| Low-quality chunks excluded | 18 |
-| Videos represented in index | 18 / 18 |
-| ChromaDB collection | `eduvision_chunks_v2` |
-| Embedding dimensions | 1,024 |
+| ASR | Whisper `large-v2`, task `translate`, temperature 0.0, no temperature fallback, `condition_on_previous_text=False`, `fp16=False`, `word_timestamps=False` (segment-level timestamps), language auto-detected |
+| Chunking | 5 segments per chunk, 1-segment overlap, hard break on gaps > 5 s |
+| Embeddings | BGE-M3 dense (`BAAI/bge-m3`): passages fp16, batch 16, max_length 512; queries fp32 |
+| Index | `data/vector_db_lv2g_translate/`, collection `lv2g_translate`, 1,391 chunks, 18 videos, cosine metric |
+| Index fingerprint | `2a3b259ded116d30f6aedf8b45b069f1143c52bc1ef8cfbdd9c106725cdf61a7` (byte-identical to the validated Stage 2.6 build) |
+| Retrieval | top-k 10, dense only (no hybrid search, no reranking) |
+| Threshold | **0.44**: both the no-LLM refusal gate and the per-chunk evidence filter |
+| Evidence | up to 5 chunks |
+| Generator | GPT-4o-mini, temperature 0.2, max 1024 tokens |
+| System prompt | rules 1–7 plus **rule 8** (grounding guard), SHA-256 `9b294ecd05aa9bc350d5056005774e533e1700373fd5b5bd939046fbb133b4e3` |
+| Follow-ups | the existing regex-gated rewrite, unchanged |
 
-Each chunk in ChromaDB retains full metadata: `video_filename`, `start_time`, `end_time`, `start_time_fmt`, `end_time_fmt`, `chunk_id`, `text_en`, and `text_raw`. Timestamp metadata originates from Whisper word-level alignment — it is never generated or approximated by the LLM.
+These values are the code defaults in `config/settings.py` and the module constants in the
+chunker/generator. The source of the selection is `experiments/stage2_6_abstention/locked_selection.json`.
+An offline check compares the runtime with that file:
 
----
-
-## Retrieval & Generation Pipeline
-
-**Ingestion (offline)**
-
-1. **FFmpeg** — extracts audio from each `.mp4` lecture video
-2. **Whisper** — transcribes audio to word-level timestamped JSON segments; `translate` task mode produces English for non-English speech
-3. **Transcript Cleaning** — filters noise, handles segment boundaries
-4. **Chunking** — groups 5 consecutive Whisper segments per chunk with 1-segment overlap for continuity
-5. **English Normalization** — GPT-4o-mini translates non-English chunks to English (`text_en`); original text is preserved as `text_raw`
-6. **BGE-M3 Embedding** — encodes `text_en` into a 1,024-dimensional dense vector
-7. **ChromaDB** — persists vectors and metadata; already-indexed videos are skipped on re-run
-
-**Query (online)**
-
-8. **Contextual Query Rewriting** — if the question references prior context, a lightweight GPT call produces a self-contained retrieval query
-9. **BGE-M3 Query Embedding** — the retrieval query is encoded with the same model
-10. **ChromaDB Retrieval** — top-10 candidates returned by cosine similarity
-11. **Similarity Threshold Filtering** — chunks below 0.50 are excluded from generation (still shown in Search Evidence)
-12. **GPT-4o-mini Generation** — receives the original question, prior conversation turns, and up to 5 above-threshold chunks; instructed to answer exclusively from evidence with `[Video: "..." @ MM:SS]` citations
-13. **Source/Timestamp Rendering** — Streamlit displays source cards with similarity scores; Go-to-Timestamp button seeks `st.video` to `start_time`
-
----
-
-## Go-to-Timestamp
-
-Go-to-Timestamp is the project's primary differentiator. Every retrieved chunk carries `start_time` metadata from Whisper — clicking the timestamp button in any source card calls `st.video(path, start_time=start_seconds)`, seeking the local video player to the exact moment.
-
-**Key design decisions:**
-
-- Timestamps come from Whisper transcript metadata, not from the LLM. The model cannot hallucinate or approximate them.
-- Both Ask a Question and Search Evidence support timestamp navigation. In Ask a Question, source cards appear inside the answer. In Search Evidence, they appear as the primary content.
-- Source cards display `text_en`, `video_filename`, `[start → end]` time range, and cosine similarity score.
-
-**Local environment**
-
-Video files are placed in `videos/`. Timestamp playback works fully via `st.video(..., start_time=...)`.
-
-**Streamlit Cloud deployment**
-
-Course videos are intentionally not committed to the repository (the files are large and not redistributable). The deployment handles missing video assets gracefully:
-
-- `_VIDEOS_AVAILABLE` is evaluated once at startup from `VIDEOS_DIR.exists()`
-- `_video_path()` returns `None` when the videos directory or a specific file is absent
-- Timestamp buttons are hidden when the corresponding video file is unavailable
-- Retrieval, search, similarity scores, and text evidence all continue to function without video files
-- The app does not crash on missing assets
-
----
-
-## Evaluation
-
-Evaluated against the final 18-video / 1,510-indexed-chunk corpus.
-
-### Single-Turn Evaluation (`eval/evaluate.py`) — 17/17 PASS
-
-| Category | Description | Cases | Result |
-|---|---|---|---|
-| **WHERE** | Correct video + approximate timestamp for location queries | 3 | ✅ 3/3 |
-| **WHAT** | Conceptual explanation grounded in transcript evidence | 3 | ✅ 3/3 |
-| **HOW** | Procedural steps with correct video citation | 3 | ✅ 3/3 |
-| **SCOPE** | Topics inside corpus but non-obvious from query wording | 2 | ✅ 2/2 |
-| **OUT-OF-SCOPE** | Topics absent from corpus → must refuse without hallucinating | 3 | ✅ 3/3 |
-| **EDGE** | Empty, too-short, or nonsense queries → graceful rejection | 3 | ✅ 3/3 |
-
-### Follow-Up Evaluation (`eval/eval_followup.py`) — 5/5 PASS
-
-| Case | Description | Result |
-|---|---|---|
-| Pronoun follow-up | "Why is it important?" after an HTML answer → correctly resolves to HTML | ✅ |
-| Timestamp follow-up | "Can you tell me the exact time it was discussed?" → cites original timestamp | ✅ |
-| Location follow-up | "Which video covers it?" → returns correct video reference | ✅ |
-| Self-contained question | Independent question in a multi-turn session → not confused by prior context | ✅ |
-| Out-of-scope boundary | Follow-up asking about a topic not in the corpus → refuses without hallucinating | ✅ |
-
----
-
-## Technology Stack
-
-| Component | Technology | Rationale |
-|---|---|---|
-| Language | Python 3.10+ | — |
-| UI | Streamlit | Python-native; no JavaScript; `st.video` supports `start_time` |
-| Transcription | OpenAI Whisper | Word-level timestamps; `translate` mode for multilingual content |
-| Embeddings | BGE-M3 (BAAI/bge-m3) | Strong multilingual semantic retrieval; free to run locally; 1024-dim |
-| Vector DB | ChromaDB | Persistent, embeddable, no external server; metadata co-located with vectors |
-| LLM | GPT-4o-mini | Fast, cost-efficient, strong instruction following for grounded generation |
-| Video processing | FFmpeg | Industry standard; handles codec and format variation |
-
----
-
-## Project Structure
-
-```text
-EduVision RAG/
-├── app/
-│   └── ui.py                  ← Streamlit app (chat tab, search tab, video player)
-├── config/
-│   └── settings.py            ← Centralised environment variable loading
-├── data/
-│   └── vector_db/             ← ChromaDB persistence (committed; deployed with the app)
-├── ingestion/
-│   ├── indexer_v2.py          ← Ingestion orchestrator (run locally to add videos)
-│   ├── video_processor.py     ← FFmpeg audio extraction
-│   ├── transcriber.py         ← Whisper transcription
-│   ├── cleaner.py             ← Segment cleaning
-│   ├── chunker.py             ← Overlapping chunk construction
-│   ├── normalizer.py          ← English normalization (GPT-4o-mini)
-│   └── embedder.py            ← BGE-M3 embedding generation
-├── retrieval/
-│   └── retriever.py           ← BGE-M3 semantic retrieval against ChromaDB
-├── generation/
-│   └── generator.py           ← GPT-4o-mini grounded answer generation
-├── eval/
-│   ├── evaluate.py            ← 17-question single-turn evaluation suite
-│   └── eval_followup.py       ← 5-case follow-up evaluation suite
-├── pipeline.py                ← End-to-end orchestrator: ask / search / health_check
-├── requirements.txt
-├── setup.py
-├── .env                       ← Secrets (never committed)
-├── .gitignore
-└── README.md
+```bash
+venv/bin/python -m config.consistency   # exit code 1 on any mismatch; does not open ChromaDB or call any API
 ```
 
-> **Note on `data/vector_db/`:** The ChromaDB index is committed to the repository and deployed with the application. The Streamlit Cloud deployment uses this pre-built index — no ingestion is required to run the deployed app. Course video files (`videos/`) are gitignored and not deployed.
+The same check runs in `tests/test_production_config.py`. An environment variable that overrides a
+locked value (for example, an old `SIMILARITY_THRESHOLD=0.50`) makes the check fail.
+
+Rule 8, verbatim:
+
+> Before answering, check that the Evidence (or Prior context) actually explains what the question asks.
+> If it only mentions the topic, or explains a related but different topic (for example a different tool,
+> technique or task than the one asked about), respond with exactly the not-found sentence from rule 3.
+> Do not fill gaps with steps, code or facts from general knowledge.
+
+**Rollback.** The previous production index (Whisper `base`, collection `eduvision_chunks_v2`, threshold
+0.50) is preserved unchanged in `data/vector_db/`. You can serve it with
+`CHROMA_DB_PATH=data/vector_db ACTIVE_COLLECTION=eduvision_chunks_v2 SIMILARITY_THRESHOLD=0.50`. The
+consistency check will then report a mismatch, by design.
+
+### Corpus
+
+| | |
+|---|---|
+| Videos | 18 (Sigma Web Development Course, tutorials 1–18) |
+| Spoken language | Hindi/Hinglish (Whisper detects `hi` on all 18). Whisper `translate` produces English text directly, so the GPT normalizer translated 0 chunks. |
+| Chunks | 1,395 built, 4 removed by the quality filter, **1,391 indexed**. No `[unclear audio]` chunks. |
+| Index size | about 18 MB |
 
 ---
 
-## Quick Start
+## Evaluation summary
+
+All numbers are on **eduvision-bench-v1.1**: 176 queries with gold **timestamp spans**, split into DEV and
+TEST. The final configuration was selected on DEV only. TEST was evaluated once, after the selection was
+locked. Answers were generated twice per query (2 repeats) and graded by an LLM judge
+(`gpt-4.1-2025-04-14`, temperature 0). The judge compared each answer against a reference transcript of the
+gold span made by a different Whisper model.
+
+**Locked TEST results: previous production vs. Stage 2.6**
+
+| TEST | Previous production<br/>(Whisper base, 0.50, no rule 8) | **Stage 2.6 (production)** |
+|---|---:|---:|
+| Recall@10 | 0.711 | **0.899** |
+| MRR@10 | 0.677 | **0.785** |
+| Correct | 63.0% | **81.5%** |
+| Correct or partially correct | 84.8% | **96.2%** |
+| Fully grounded (answered) | 73.7% | **85.9%** |
+| Hallucination (in-scope answers) | 17.9% | **10.3%** |
+| Out-of-scope questions answered | 6.7% | 6.7% |
+| False refusals (in-scope) | 15.2% | **3.8%** |
+| Citation inside the gold span (±5 s) | 86.5% | 77.4% |
+
+TEST size: 92 scored in-scope queries (184 answers) and 15 out-of-scope queries (30 answers). R@10 gain
++0.188, 95% CI (+0.11, +0.27). Differences of a few points are within noise at this size.
+
+How to read these numbers:
+
+- **"Correct", "grounded" and "hallucination" are judgements by an LLM judge**, measured against
+  AI-produced references. They are not human ratings.
+- **The citation-in-gold-span rate is lower than before.** This is partly a labelling artefact: about half of
+  the gold spans were first drafted from the previous production system's chunk boundaries. On spans placed
+  independently of either system, Stage 2.6's timestamp start error is lower (8.4 s vs 16.6 s on TEST).
+  See [docs/EVALUATION.md](docs/EVALUATION.md).
+- **Out-of-scope answering did not improve over the previous system.** Stage 2.6 brought it back down from
+  13.3% (the Stage 2 transcription change alone) to the previous 6.7%: 2 of 30 out-of-scope answers.
+
+**Later stages, no change promoted:**
+
+- **Stage 3** tried hybrid retrieval and reranking (BM25, BGE-M3 sparse, RRF, ColBERT). ColBERT reranking
+  improved retrieval (DEV R@10 0.900 → 0.947), but hallucination roughly doubled (≈13% → 26%). No variant
+  improved end-to-end answers.
+- **Stage 4** studied citation integrity and claim-level faithfulness, offline. Every citation was valid,
+  but about 42% of factual sentences carried no citation. Claim-level faithfulness could not be measured
+  reliably with the existing judge or the embedding proxy.
+
+The full evaluation history, metric definitions, DEV results and artifact index are in
+[docs/EVALUATION.md](docs/EVALUATION.md).
+
+---
+
+## Known limitations
+
+- **Benchmark labels are AI-checked, not human-verified.** An AI annotator wrote the queries and gold spans
+  and checked them against two Whisper transcriptions and video frames. The answer judge is also an LLM, and
+  its reference text is a Whisper transcript. No person has verified the labels.
+- **Claim-level faithfulness is unresolved (Stage 4).** The existing judge and the BGE-M3 alignment proxy
+  were not reliable at claim level on a small, AI-labelled verification set. No faithfulness metric or
+  intervention was adopted.
+- **Citation coverage is incomplete.** About 42% of factual sentences in DEV answers carry no citation
+  (heuristic count). Citations are free text written by the model; they are not parsed or validated at
+  runtime.
+- **No global rate or budget limit.** The only limit is a 10-question counter per browser session, which
+  resets on page reload. A public deployment spends the owner's OpenAI key without a global cap.
+- **BGE-M3 memory and cold start need validation on the deployment host.** The model is about 2.2 GB of
+  weights, is downloaded from Hugging Face on first start and runs queries in fp32.
+- **Videos are local project data.** `videos/` is git-ignored and not redistributable. Without it,
+  Go-to-Timestamp buttons are hidden; retrieval, answers and evidence still work.
+- **ChromaDB writes to its directory when opened.** The index directory must be writable, and running the app
+  can change files in `data/vector_db_lv2g_translate/`. To verify the fingerprint, check a copy.
+- **A rebuild may not reproduce the shipped index.** Whisper output can differ across hardware and library
+  versions. The shipped index is the reference artifact.
+- **Partial answers can be hidden.** Any answer containing "could not find" is treated as not-found, and the UI
+  shows the not-found box instead. The metrics were measured with this behaviour, so it was left unchanged.
+- **Small evaluation slices.** TEST has 12 Hinglish and 9 follow-up in-scope queries, so slice results are
+  indicative only.
+- **Python version.** The pinned dependencies were verified only on Python 3.14.2.
+- **External dependency.** Answers and follow-up rewriting require the OpenAI API. Search Evidence does not.
+
+---
+
+## Quick start
 
 ### Prerequisites
 
-- Python 3.10+
-- [FFmpeg](https://ffmpeg.org/download.html) installed as a system binary
+- Python 3.14 (the pinned versions were verified on 3.14.2)
+- Network access on first start: the BGE-M3 weights (about 2.2 GB) download from Hugging Face
+- FFmpeg, **only** for rebuilding the index (`brew install ffmpeg` / `sudo apt install ffmpeg`)
 
-```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu / Debian
-sudo apt install ffmpeg
-```
-
-### 1. Clone the repository
-
-```bash
-git clone <repository-url>
-cd "EduVision RAG"
-```
-
-### 2. Create and activate a virtual environment
+### Run the app
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate      # macOS / Linux
-# venv\Scripts\activate       # Windows
+source venv/bin/activate
+pip install -r app/requirements.txt     # runtime only; use requirements.txt for ingestion + evaluation
 ```
 
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-> `torch` (~2 GB) and `FlagEmbedding` / BGE-M3 (~570 MB) are large downloads. BGE-M3 is cached by HuggingFace after the first download.
-
-### 4. Configure secrets
+Create `.env` in the project root (it is git-ignored):
 
 ```env
-# .env
-OPENAI_API_KEY=sk-...    # Required for answer generation and normalization
+OPENAI_API_KEY=sk-...   # required for answers and follow-up rewriting; Search Evidence works without it
 ```
 
-### 5. Launch the UI
-
-The ChromaDB index is included in the repository. The app runs immediately against the pre-built index:
+No other variables are needed: the defaults are the Stage 2.6 configuration. Do not copy an old `.env`
+that sets `WHISPER_MODEL=base`, `SIMILARITY_THRESHOLD=0.50`, `CHROMA_DB_PATH=data/vector_db` or
+`ACTIVE_COLLECTION=eduvision_chunks_v2`, because those values silently restore the previous system.
 
 ```bash
-streamlit run app/ui.py
+venv/bin/python -m config.consistency   # expect "RESULT: OK"
+streamlit run app/ui.py                 # http://localhost:8501
 ```
 
-Open [http://localhost:8501](http://localhost:8501).
+Put the course `.mp4` files in `videos/` to enable Go-to-Timestamp. The filenames must match the
+`video_filename` values in the index metadata.
 
-> **Go-to-Timestamp** requires `.mp4` files in the `videos/` directory. Without them, retrieval and Search Evidence still work; timestamp playback buttons are hidden.
+### Configuration
 
-### 6. (Optional) Rebuild the corpus locally
+Settings are read from environment variables (or `.env`) in `config/settings.py`. The defaults are the
+Stage 2.6 values.
 
-To add videos or rebuild the index from scratch:
-
-```bash
-# Place .mp4 files in videos/
-python ingestion/indexer_v2.py
-```
-
-Already-indexed videos are skipped automatically.
-
----
-
-## Configuration
-
-All settings are loaded from environment variables with the defaults shown below.
-
-| Variable | Default | Description |
+| Variable | Default | Notes |
 |---|---|---|
-| `OPENAI_API_KEY` | — | **Required** for generation and normalization |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model for generation and normalization |
-| `WHISPER_MODEL` | `base` | Whisper model size (`tiny` · `base` · `small` · `medium` · `large-v3`) |
-| `BGE_MODEL` | `BAAI/bge-m3` | HuggingFace model ID for embeddings |
-| `CHROMA_DB_PATH` | `data/vector_db` | ChromaDB persistence directory |
-| `RETRIEVAL_TOP_K` | `10` | Candidate chunks retrieved per query |
-| `MAX_LLM_EVIDENCE` | `5` | Maximum above-threshold chunks passed to the LLM |
-| `SIMILARITY_THRESHOLD` | `0.50` | Minimum cosine similarity for evidence to be used in generation |
-| `MAX_TOKENS` | `1024` | Maximum tokens in LLM response |
-| `TEMPERATURE` | `0.2` | LLM temperature (lower = more factual) |
+| `OPENAI_API_KEY` | — | Required for answers and follow-up rewriting |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Generator and rewrite model |
+| `TEMPERATURE` | `0.2` | Generator temperature |
+| `MAX_TOKENS` | `1024` | Generator response limit |
+| `BGE_MODEL` | `BAAI/bge-m3` | Embedding model |
+| `CHROMA_DB_PATH` | `data/vector_db_lv2g_translate` | Relative paths resolve against the project root |
+| `ACTIVE_COLLECTION` | `lv2g_translate` | ChromaDB collection |
+| `RETRIEVAL_TOP_K` | `10` | Chunks retrieved per query |
+| `MAX_LLM_EVIDENCE` | `5` | Maximum evidence chunks passed to the LLM |
+| `SIMILARITY_THRESHOLD` | `0.44` | Refusal gate and evidence filter |
+| `WHISPER_MODEL` | `large-v2` | Ingestion only |
+| `WHISPER_TASK` | `translate` | Ingestion only |
+| `WHISPER_TEMPERATURE` | `0.0` | Ingestion only |
+| `WHISPER_TEMPERATURE_FALLBACK` | `false` | Ingestion only |
+| `WHISPER_CONDITION_ON_PREVIOUS_TEXT` | `false` | Ingestion only |
+
+Chunking (5 / 1 / 5 s) and the system prompt are code constants, not environment variables. Changing any
+locked value makes `python -m config.consistency` fail.
 
 ---
 
-## Engineering Design Principles
+## Rebuilding the index
 
-1. **Retrieval is the factual foundation.** The LLM is not asked to recall facts — it is only asked to synthesise an answer from the retrieved evidence it receives.
+**Do not rebuild the production index in place.** Follow [ingestion/REBUILD.md](ingestion/REBUILD.md).
+In short:
 
-2. **Timestamps come from transcript metadata, not the LLM.** Whisper alignment produces `start_time` for each chunk at ingestion time. The LLM cannot generate, approximate, or hallucinate a timestamp.
-
-3. **Retrieval and generation are independently inspectable.** The Search Evidence tab exposes the raw retrieval results for any query — without running a generation step. This decoupling makes it possible to verify retrieval quality independently.
-
-4. **Follow-up rewriting is retrieval-focused, not conversation-focused.** The query rewriter produces a self-contained embedding query; the original question and prior answer are passed separately to the generator as conversation context.
-
-5. **Deployment gracefully handles missing video assets.** The `videos/` directory is checked once at startup. Missing files suppress timestamp playback buttons without affecting retrieval, evidence display, or generation.
-
-6. **Pipeline stages are independently modular.** Each ingestion stage (`transcriber`, `cleaner`, `chunker`, `normalizer`, `embedder`) is a separate module. `pipeline.py` is the single entry point for the UI; the UI imports nothing from ingestion.
-
----
-
-## Current Scope & Limitations
-
-- **Corpus:** 18 videos from the Sigma Web Development Course (HTML + CSS), totalling 1,510 indexed chunks. Adding further videos requires running the ingestion pipeline locally and committing the updated ChromaDB index.
-- **Go-to-Timestamp:** Local video playback requires `.mp4` files in `videos/`. The Streamlit Cloud deployment does not include the course videos; timestamp text remains visible in source cards but in-browser playback is unavailable.
-- **Language:** All answers are generated in English. Source cards display `text_en` regardless of the original video language.
-- **OpenAI dependency:** GPT-4o-mini is required for answer generation and English normalization. Search Evidence (retrieval only) operates without an API key.
-- **Search Evidence is intentionally LLM-free.** It demonstrates the retrieval layer in isolation from generation — this is a design choice, not a limitation.
+- The authoritative build path is `experiments/stage2_transcription/build_candidate.py`
+  (`transcribe --model large-v2 --task translate --greedy`, then `index`). It always uses a **new** name and
+  writes under `experiments/stage2_transcription/artifacts/<name>/`.
+- `ingestion/build_safety.py` refuses to build into the shipped index, the legacy `data/vector_db/`, the
+  validated Stage 2.6 source or whatever `CHROMA_DB_PATH` points to. It also refuses to reuse stale cached
+  transcripts, chunks or embeddings unless forced.
+- `ingestion/indexer_v2.py` (the legacy staged pipeline) needs an explicit
+  `--db-path <non-production dir> --collection <name>`.
+- Before promotion, verify the rebuilt index: its fingerprint (on a copy), its chunk count and its DEV
+  retrieval results. Promotion is a separate, explicit decision. Update `config/settings.py` and
+  `config/consistency.py` together when promoting.
 
 ---
 
-## Project Status
+## Testing and evaluation tools
 
-EduVision RAG is complete and deployed to Streamlit Community Cloud.
+```bash
+venv/bin/python -m unittest discover -s tests   # offline unit tests: no API calls, does not open the production index
+venv/bin/python -m config.consistency           # offline production-config check
+```
 
-**Final verified metrics:**
+| Tool | Cost | Notes |
+|---|---|---|
+| `tests/` | free | Production config, rebuild safety, UI text safety, benchmark metrics and the Stage 3/4 experiment code |
+| `eval/run_benchmark.py` | free (local BGE-M3) | Retrieval metrics for both DEV and TEST. Opens ChromaDB (rewrites index files). **TEST is held out; do not tune on it.** |
+| `eval/compare_results.py` | free | Paired comparison of two result files with bootstrap CIs |
+| `eval/bench_tools.py` | free | Annotation and validation CLI for the benchmark |
+| `eval/answer_eval.py` | **paid** (OpenAI) | End-to-end answers plus the LLM judge |
+| `eval/evaluate.py`, `eval/eval_followup.py` | **paid** (OpenAI) | Legacy 17-case and 5-case smoke suites. They passed (17/17, 5/5) on the **previous** system and have not been re-run on Stage 2.6. |
 
-| Metric | Value |
-|---|---|
-| Course videos | 18 |
-| Embeddings generated | 1,528 |
-| Chunks indexed | 1,510 |
-| Main evaluation | **17 / 17 PASS** |
-| Follow-up evaluation | **5 / 5 PASS** |
+---
 
-The project demonstrates grounded video-course RAG with retrieval that is independently inspectable via the Search Evidence tab, answers that are verifiably sourced to exact transcript timestamps, and direct source navigation through the Go-to-Timestamp player — all in a single Streamlit application backed by a committed ChromaDB index.
+## Project structure
+
+```text
+├── app/
+│   ├── ui.py                    Streamlit app (Ask a Question, Search Evidence, video player)
+│   ├── text_safety.py           HTML escaping / safe error text for the UI
+│   ├── requirements.txt         runtime dependencies
+│   └── .streamlit/config.toml
+├── config/
+│   ├── settings.py              all runtime settings (Stage 2.6 defaults)
+│   └── consistency.py           offline check: runtime == locked Stage 2.6 selection
+├── pipeline.py                  ask() / search() / health_check(): the UI's only entry point
+├── retrieval/retriever.py       BGE-M3 query embedding + ChromaDB search
+├── generation/generator.py      evidence selection, SYSTEM_PROMPT (rules 1–8), GPT-4o-mini call
+├── ingestion/                   offline: video_processor, transcriber, cleaner, chunker,
+│                                normalizer, embedder, indexer(_v2), build_safety, REBUILD.md
+├── data/
+│   ├── vector_db_lv2g_translate/   PRODUCTION index (Stage 2.6)
+│   └── vector_db/                  previous production index (rollback only)
+├── eval/
+│   ├── benchmark/               eduvision-bench-v1.1 (176 queries) + corpus manifest + README
+│   ├── results/                 per-run result files of Stages 1–3
+│   ├── run_benchmark.py, bench_*.py, compare_results.py, answer_eval.py
+│   └── evaluate.py, eval_followup.py   legacy smoke suites
+├── experiments/                 EXPERIMENT HISTORY: not used by the app
+│   ├── stage2_transcription/    Stage 2 / 2.5 (ASR A/B, chunking) + authoritative index build script
+│   ├── stage2_6_abstention/     locked_selection.json, guard_prompt.txt (rule 8), threshold sweep
+│   ├── stage3_retrieval/        hybrid retrieval / reranking (negative result)
+│   ├── stage4_faithfulness/     citation integrity + faithfulness (offline, nothing promoted)
+│   └── finalization/            pre-finalization audit (2026-10-05)
+├── tests/                       offline unit tests
+├── docs/EVALUATION.md           evaluation journey and final metrics
+├── archive/                     one-off script used for the previous index (historical)
+└── requirements.txt             full dependencies (ingestion + evaluation)
+```
+
+### Production vs. experiment history
+
+- **Production:** `app/`, `config/`, `pipeline.py`, `retrieval/`, `generation/`, `ingestion/` and
+  `data/vector_db_lv2g_translate/`. These run in the app or build its index.
+- **Rollback only:** `data/vector_db/`.
+- **Evaluation harness:** `eval/` and `tests/`. Not imported by the app.
+- **Experiment history:** `experiments/stage*/`, `eval/results/`, `experiments/finalization/` and `archive/`.
+  These are kept as the record of how the configuration was chosen. Paths and statements in them describe
+  the system at the time each stage ran: for example, Stage 3/4 reports refer to the index under
+  `experiments/stage2_transcription/artifacts/`, which is now shipped as `data/vector_db_lv2g_translate/`.

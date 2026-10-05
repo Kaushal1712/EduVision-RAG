@@ -114,7 +114,8 @@ from typing import Optional
 import numpy as np
 
 from config.settings import PROCESSED_DIR, BGE_MODEL
-from ingestion.chunker import Chunk, load_chunks
+from ingestion.build_safety import require_not_older_than
+from ingestion.chunker import Chunk, _chunks_path, load_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,7 @@ def embed_video_chunks(
             "(use force=True to re-embed)",
             path.name,
         )
+        require_not_older_than(path, [_chunks_path(video_id)], "embedding file")
         loaded = load_embeddings(video_id)
         if loaded is not None:
             return loaded

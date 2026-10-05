@@ -29,11 +29,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from config.settings import (
+    ACTIVE_COLLECTION,
     VIDEOS_DIR,
     SIMILARITY_THRESHOLD,
     RETRIEVAL_TOP_K,
     MAX_LLM_EVIDENCE,
 )
+from app.text_safety import escape, user_facing_error
 
 import streamlit as st
 
@@ -465,11 +467,11 @@ def _render_source_card(
     st.markdown(f"""
 <div class="{card_class}">
     <div class="source-header">
-        <span class="timestamp-badge">\u23f1 {ts}</span>
+        <span class="timestamp-badge">\u23f1 {escape(ts)}</span>
         <span class="similarity-badge {sim_class}">sim {sim_pct}</span>
     </div>
-    <div class="video-label">\U0001f4f9 {vid_label}</div>
-    <div class="chunk-text">"{text_prev}"</div>
+    <div class="video-label">\U0001f4f9 {escape(vid_label)}</div>
+    <div class="chunk-text">"{escape(text_prev)}"</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -579,14 +581,15 @@ def _render_sidebar(status):
 
         st.markdown(f"""
 <div class="status-pill">{chroma_icon} {status.chroma_count:,} chunks indexed</div><br>
-<div class="status-pill">{key_icon} {status.model_name}</div>
+<div class="status-pill">{key_icon} {escape(status.model_name)}</div>
 """, unsafe_allow_html=True)
 
         if not status.api_key_set:
             st.warning("OPENAI_API_KEY not set — Search tab still works without it.", icon="🔑")
 
         if not status.chroma_ok:
-            st.error("ChromaDB unavailable. Run `python ingestion/indexer_v2.py` first.")
+            st.error("Course index unavailable. Operators: run `python -m config.consistency` "
+                     "and see ingestion/REBUILD.md.")
 
         st.divider()
 
@@ -616,7 +619,7 @@ All answers cite exact timestamps — click any **▶ timestamp** button to
 jump directly to that moment in the video.
 
 ---
-- Corpus: **{status.chroma_count:,} chunks** · 18 videos · v2 index
+- Corpus: **{status.chroma_count:,} chunks** · {len(st.session_state.get("_video_catalogue", []))} videos · index `{ACTIVE_COLLECTION}`
 - Embeddings: **BGE-M3** (1024-dim, multilingual)
 - Generator: **gpt-4o-mini**
 - Threshold: **{SIMILARITY_THRESHOLD}** cosine similarity
@@ -832,7 +835,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
                 st.warning(answer_text)
 
             elif result.error:
-                answer_text = f"❌ System error: {result.error}"
+                answer_text = f"❌ {user_facing_error(result.error)}"
                 st.error(answer_text)
 
             elif result.not_found:
@@ -868,7 +871,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
         # Save to history
         st.session_state.chat_history.append({
             "role": "assistant",
-            "content": answer_text if result.query_valid and not result.error else (result.validation_error or result.error or ""),
+            "content": answer_text if result.query_valid else (result.validation_error or ""),
             "result": result,
         })
         st.session_state.last_result = result
@@ -1052,7 +1055,8 @@ def main():
 
     # Stop early if system not ready
     if not status.chroma_ok:
-        st.error("🔴 ChromaDB is not available. Run `python ingestion/indexer_v2.py` first.")
+        st.error("🔴 Course index unavailable. Operators: run `python -m config.consistency` "
+                 "and see ingestion/REBUILD.md.")
         st.stop()
 
     # ── Video Player (appears when a timestamp button is clicked) ─────────────
@@ -1068,7 +1072,7 @@ def main():
         st.markdown(
             f'<div class="player-banner">'
             f'<span class="player-icon">📺</span>'
-            f'<span>Now playing — <strong>{vp["label"]}</strong></span>'
+            f'<span>Now playing — <strong>{escape(vp["label"])}</strong></span>'
             f'</div>',
             unsafe_allow_html=True,
         )

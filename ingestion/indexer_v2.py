@@ -12,12 +12,20 @@ Differences from v1:
   - text_en (English) is the ChromaDB document field (used for retrieval)
   - text_raw (original) is stored in metadata for provenance
   - Low-quality chunks (ASR noise) are skipped
-  - Collection name is CHROMA_COLLECTION_NAME_V2 = "eduvision_chunks_v2"
-  - v1 collection is never modified
+
+Build target (required, explicit): --db-path and --collection. The shipped production index,
+the previous production index, the verified Stage 2.6 source index and the runtime
+CHROMA_DB_PATH are refused (ingestion/build_safety.py). The translation cache is off unless
+--use-translation-cache is given: it is keyed by chunk_id, so it would return translations of
+chunks from an earlier transcription with the same ids.
 
 Run:
-    python ingestion/indexer_v2.py
-    python ingestion/indexer_v2.py --force   # rebuild from scratch
+    python ingestion/indexer_v2.py --db-path experiments/<run>/vector_db --collection <name>
+    ... --force                    # delete and rebuild that collection in that directory
+    ... --use-translation-cache    # reuse data/processed/normalizer_cache.json (old behaviour)
+
+The shipped Stage 2.6 index was assembled by experiments/stage2_transcription/build_candidate.py;
+see ingestion/REBUILD.md.
 """
 
 import argparse
@@ -30,10 +38,10 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 
 from config.settings import (
-    CHROMA_DB_PATH,
     PROCESSED_DIR,
     BGE_MODEL,
 )
+from ingestion.build_safety import UnsafeBuildTarget, require_build_index_dir
 from ingestion.chunker import load_chunks
 from ingestion.normalizer import normalize_chunks, print_normalization_report
 
@@ -44,16 +52,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── V2 collection name (v1 is never touched) ──────────────────────────────────
-CHROMA_COLLECTION_NAME_V2 = "eduvision_chunks_v2"
-
 # ── Batch size for Chroma upserts ─────────────────────────────────────────────
 INDEX_BATCH_SIZE = 50
 
 
-def _get_chroma_client() -> chromadb.PersistentClient:
+def _get_chroma_client(target: Path) -> chromadb.PersistentClient:
     return chromadb.PersistentClient(
-        path=CHROMA_DB_PATH,
+        path=str(target),
         settings=ChromaSettings(anonymized_telemetry=False),
     )
 
@@ -71,22 +76,34 @@ def _load_embeddings_v1(video_id: str) -> dict[str, list[float]]:
     return data["embeddings"]  # dict: chunk_id → embedding list
 
 
-def main(force: bool = False) -> None:
+def main(
+    force: bool = False,
+    *,
+    db_path: str | None = None,
+    collection_name: str | None = None,
+    use_translation_cache: bool = False,
+) -> None:
+    # Validate the target before any ChromaDB client exists.
+    target = require_build_index_dir(db_path)
+    if not collection_name:
+        raise UnsafeBuildTarget("An explicit --collection name is required for builds.")
+
     print("=" * 68)
     print("EduVision RAG — Stage 14: Build v2 Index (English Normalised)")
+    print(f"Target: {target}  collection: {collection_name}  translation cache: {use_translation_cache}")
     print("=" * 68)
     print()
 
-    client = _get_chroma_client()
+    client = _get_chroma_client(target)
 
     # Check if v2 already exists
     existing_names = [c.name for c in client.list_collections()]
-    if CHROMA_COLLECTION_NAME_V2 in existing_names:
+    if collection_name in existing_names:
         if force:
             logger.info("--force: deleting existing v2 collection")
-            client.delete_collection(CHROMA_COLLECTION_NAME_V2)
+            client.delete_collection(collection_name)
         else:
-            existing = client.get_collection(CHROMA_COLLECTION_NAME_V2)
+            existing = client.get_collection(collection_name)
             count = existing.count()
             print(f"  v2 collection already exists with {count} docs.")
             print(f"  Use --force to rebuild. Exiting.")
@@ -133,7 +150,7 @@ def main(force: bool = False) -> None:
     # ── Step 2: Normalise (quality filter + translation) ──────────────────────
     print("── Step 2: Normalising chunks (quality filter + English translation) ──")
     t0 = time.time()
-    normalized = normalize_chunks(all_chunks, use_cache=True, save_cache=True)
+    normalized = normalize_chunks(all_chunks, use_cache=use_translation_cache, save_cache=use_translation_cache)
     elapsed = time.time() - t0
 
     # Print audit report
@@ -174,7 +191,7 @@ def main(force: bool = False) -> None:
     # ── Step 4: Build v2 ChromaDB collection ─────────────────────────────────
     print("── Step 4: Building v2 ChromaDB collection ──────────────────────")
     collection = client.create_collection(
-        name=CHROMA_COLLECTION_NAME_V2,
+        name=collection_name,
         metadata={"hnsw:space": "cosine"},
     )
 
@@ -224,12 +241,12 @@ def main(force: bool = False) -> None:
         _flush_batch(batch)
         total_upserted += len(batch)
 
-    print(f"\n  ✅ v2 collection built: {total_upserted} documents in '{CHROMA_COLLECTION_NAME_V2}'")
+    print(f"\n  ✅ v2 collection built: {total_upserted} documents in '{collection_name}'")
     print()
 
     # ── Step 5: Verification ──────────────────────────────────────────────────
     print("── Step 5: Verification ─────────────────────────────────────────")
-    col = client.get_collection(CHROMA_COLLECTION_NAME_V2)
+    col = client.get_collection(collection_name)
     count = col.count()
     expected = len(quality_ok)
     print(f"  Collection count = {count} (expected {expected}): {'✅' if count == expected else '❌'}")
@@ -250,14 +267,20 @@ def main(force: bool = False) -> None:
     print("=" * 68)
     print(f"v2 index complete: {total_upserted} chunks indexed")
     print(f"  Low-quality chunks excluded: {len(low_quality)}")
-    print(f"  Collection name: {CHROMA_COLLECTION_NAME_V2}")
+    print(f"  Collection name: {collection_name}")
     print(f"  Existing v1 (eduvision_chunks): UNTOUCHED")
     print("=" * 68)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build v2 ChromaDB index")
+    parser.add_argument("--db-path", required=True,
+                        help="Output index directory (never a production index)")
+    parser.add_argument("--collection", required=True, help="Collection name to build")
     parser.add_argument("--force", action="store_true",
-                        help="Delete and rebuild the v2 collection from scratch")
+                        help="Delete and rebuild the collection from scratch")
+    parser.add_argument("--use-translation-cache", action="store_true",
+                        help="Reuse the chunk_id-keyed translation cache (off by default)")
     args = parser.parse_args()
-    main(force=args.force)
+    main(force=args.force, db_path=args.db_path, collection_name=args.collection,
+         use_translation_cache=args.use_translation_cache)

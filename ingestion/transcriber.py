@@ -54,9 +54,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from config.settings import TRANSCRIPTS_DIR, WHISPER_MODEL
+from config.settings import (
+    TRANSCRIPTS_DIR,
+    WHISPER_CONDITION_ON_PREVIOUS_TEXT,
+    WHISPER_MODEL,
+    WHISPER_TASK,
+    WHISPER_TEMPERATURE,
+    WHISPER_TEMPERATURE_FALLBACK,
+)
+
+from ingestion.build_safety import require_transcript_matches
 
 logger = logging.getLogger(__name__)
+
+# Whisper's built-in fallback step (0.0 → 1.0 in 0.2 increments) when WHISPER_TEMPERATURE_FALLBACK is on.
+_FALLBACK_STEP = 0.2
 
 
 # ── Data models ───────────────────────────────────────────────────────────────
@@ -91,9 +103,33 @@ class TranscriptResult:
     full_text: str
     segments: list[TranscriptSegment]
     transcript_path: Path    # where the JSON was saved
+    whisper_options: Optional[dict] = None   # decoding options used (None = not recorded)
 
 
 # ── Core functions ────────────────────────────────────────────────────────────
+
+def transcription_options() -> dict:
+    """
+    Keyword arguments for whisper's model.transcribe(), from config/settings.py.
+
+    With the defaults this is the Stage 2.6 decoding: task translate, a single temperature
+    (no fallback) and no conditioning on previous text. A float temperature disables Whisper's
+    fallback; a tuple enables it.
+    """
+    if WHISPER_TEMPERATURE_FALLBACK:
+        steps = round((1.0 - WHISPER_TEMPERATURE) / _FALLBACK_STEP)
+        temperature = tuple(round(WHISPER_TEMPERATURE + i * _FALLBACK_STEP, 1) for i in range(steps + 1))
+    else:
+        temperature = WHISPER_TEMPERATURE
+    return {
+        "task": WHISPER_TASK,
+        "verbose": False,           # suppress per-segment stdout noise
+        "fp16": False,              # fp16 requires CUDA GPU; keep False for CPU
+        "word_timestamps": False,   # segment-level timestamps are sufficient
+        "temperature": temperature,
+        "condition_on_previous_text": WHISPER_CONDITION_ON_PREVIOUS_TEXT,
+    }
+
 
 def _load_whisper_model(model_name: str):
     """
@@ -160,6 +196,7 @@ def _save_transcript(result: TranscriptResult) -> None:
         "filename": result.filename,
         "duration_seconds": result.duration_seconds,
         "whisper_model": result.whisper_model,
+        "whisper_options": result.whisper_options,
         "language": result.language,
         "transcribed_at": datetime.now().isoformat(timespec="seconds"),
         "full_text": result.full_text,
@@ -220,6 +257,7 @@ def load_transcript(video_id: str) -> Optional[TranscriptResult]:
         full_text=data["full_text"],
         segments=segments,
         transcript_path=path,
+        whisper_options=data.get("whisper_options"),
     )
 
 
@@ -256,7 +294,10 @@ def transcribe_video(
             "(use force=True to re-transcribe)",
             transcript_path.name,
         )
-        return load_transcript(video_id)
+        existing = load_transcript(video_id)
+        # Never silently reuse a transcript made with another model or other decoding options.
+        require_transcript_matches(existing, WHISPER_MODEL, transcription_options(), transcript_path)
+        return existing
 
     if not audio_path.exists():
         logger.error("Audio file not found: %s — run Stage 2 first.", audio_path)
@@ -276,13 +317,8 @@ def transcribe_video(
     t_start = time.time()
 
     try:
-        raw_result = model.transcribe(
-            str(audio_path),
-            # language="en",    # uncomment to force English (slightly faster)
-            verbose=False,      # suppress per-segment stdout noise
-            fp16=False,         # fp16 requires CUDA GPU; keep False for CPU
-            word_timestamps=False,  # segment-level timestamps are sufficient
-        )
+        # Language is auto-detected (as for the Stage 2.6 index).
+        raw_result = model.transcribe(str(audio_path), **transcription_options())
     except Exception as e:
         logger.error("Whisper transcription failed for %s: %s", filename, e)
         return None
@@ -314,6 +350,7 @@ def transcribe_video(
         full_text=raw_result.get("text", "").strip(),
         segments=segments,
         transcript_path=transcript_path,
+        whisper_options=transcription_options(),
     )
 
     # ── Persist to disk ───────────────────────────────────────────────────────

@@ -1,0 +1,17 @@
+{
+  "locked_at": "2026-10-03T10:51:30Z",
+  "selected_on": "DEV only (benchmark v1.1); TEST not used for any selection",
+  "index": "experiments/stage2_transcription/artifacts/lv2g_translate/vector_db (collection lv2g_translate; Whisper large-v2 translate greedy)",
+  "similarity_threshold": 0.44,
+  "threshold_rule": "midpoint of the DEV plateau with zero in-scope gate refusals and unchanged out-of-scope gate decisions (0.435-0.451)",
+  "system_prompt_file": "experiments/stage2_6_abstention/guard_prompt.txt",
+  "system_prompt_sha256": "9b294ecd05aa9bc350d5056005774e533e1700373fd5b5bd939046fbb133b4e3",
+  "prompt_change": "production SYSTEM_PROMPT + rule 8 (refuse when evidence only mentions the topic or covers a different technique; no gap-filling from general knowledge)",
+  "unchanged": ["retrieval code", "top_k 10", "MAX_LLM_EVIDENCE 5", "GPT-4o-mini temperature 0.2", "chunking", "embeddings", "follow-up rewrite"],
+  "alternatives_rejected_on_dev": {
+    "t0.50 no guard (Stage 2 candidate)": "Hinglish false refusal 12.5%, OOS answered 22.2%",
+    "t0.44 no guard": "OOS answered 22.2% unchanged",
+    "t0.50 + guard": "still refuses Hinglish EVB-172 (12.5%)",
+    "language-specific thresholds": "not justified: one global threshold reaches 0 DEV in-scope gate refusals for both languages"
+  }
+}

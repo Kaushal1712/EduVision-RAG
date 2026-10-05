@@ -28,7 +28,8 @@ Run:
 
 Requirements:
   - OPENAI_API_KEY set in .env (needed for answer generation and query rewriting)
-  - ChromaDB v2 index built (run ingestion/indexer_v2.py first)
+  - The configured runtime index is present (see ingestion/REBUILD.md; legacy suite,
+    written for the earlier v2 index)
   - Internet access for the OpenAI API calls
 """
 
