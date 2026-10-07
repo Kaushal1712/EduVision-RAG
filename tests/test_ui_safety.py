@@ -80,6 +80,12 @@ class TestStreamlitConfig(unittest.TestCase):
         self.assertNotEqual(cfg.get("server", {}).get("enableCORS", True), False)
         self.assertNotEqual(cfg.get("server", {}).get("enableXsrfProtection", True), False)
 
+    def test_source_watcher_disabled(self):
+        # The module watcher imports transformers' lazy vision modules and floods the logs with
+        # "No module named 'torchvision'" (torchvision is not a dependency).
+        cfg = tomllib.loads((ROOT / "app" / ".streamlit" / "config.toml").read_text())
+        self.assertEqual(cfg.get("server", {}).get("fileWatcherType"), "none")
+
 
 if __name__ == "__main__":
     unittest.main()

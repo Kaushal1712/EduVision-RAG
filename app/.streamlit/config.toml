@@ -8,6 +8,12 @@ font            = "sans serif"
 
 [server]
 headless        = true
+# No source watcher. On every script run Streamlit's module watcher reads attributes of each
+# module in sys.modules; on transformers' lazy vision modules (pulled in by FlagEmbedding) that
+# imports them and logs "No module named 'torchvision'" for ~100 modules. The app does not use
+# torchvision and does not need rerun-on-save in deployment. For local development with
+# auto-reload: streamlit run app/ui.py --server.fileWatcherType auto
+fileWatcherType = "none"
 # enableCORS is left at Streamlit's default (true). Setting it to false makes Streamlit send
 # Access-Control-Allow-Origin: * and accept WebSocket connections from any origin, so any site
 # could drive the app (and spend the OpenAI key). For extra origins use server.corsAllowedOrigins.
