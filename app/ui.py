@@ -444,6 +444,28 @@ def _video_path(video_filename: str):
     return p if p.exists() else None
 
 
+def _video_id_for_label(video_filter: str):
+    """Map the sidebar label to its video_id; None means All Videos (no filter)."""
+    if video_filter == "All Videos":
+        return None
+    _catalogue = st.session_state.get("_video_catalogue", [])
+    return {label: vid_id for vid_id, label in _catalogue}.get(video_filter)
+
+
+def _history_for_scope(chat_history: list[dict], video_id_filter) -> list[dict]:
+    """Prior turns the generator may use for the current video scope.
+
+    The generator treats prior assistant answers as citable context (system prompt
+    rules 1 and 7), so a turn answered under another scope would let citations
+    from other videos into a single-video answer. With a video selected, only
+    turns asked under that same video are passed on. All Videos keeps every turn,
+    because any single-video answer is still within the whole course.
+    """
+    if video_id_filter is None:
+        return list(chat_history)
+    return [h for h in chat_history if h.get("video_id_filter") == video_id_filter]
+
+
 def _render_source_card(
     result,
     idx: int,
@@ -497,9 +519,13 @@ def _render_source_card(
                 st.rerun()
 
 
-def _render_diagnostics(result):
-    """Render small metric chips for latency and token info."""
+def _render_diagnostics(result, video_id_filter=None):
+    """Render small metric chips for latency and token info (and the video scope, if any)."""
     chips = []
+    if video_id_filter:
+        # Answers stay in the history after the sidebar filter changes; the chip
+        # shows which video each one was restricted to.
+        chips.append(f'<span class="metric-chip">video <span>{escape(_short_video_name(video_id_filter))}</span></span>')
     if result.retrieval_stats:
         chips.append(f'<span class="metric-chip">retrieved <span>{result.retrieval_stats.total_results}</span></span>')
         chips.append(f'<span class="metric-chip">above threshold <span>{result.retrieval_stats.above_threshold}</span></span>')
@@ -555,6 +581,9 @@ def _init_session():
     if "search_query_cache" not in st.session_state:
         # The query string corresponding to search_results_cache.
         st.session_state.search_query_cache = ""
+    if "search_filter_cache" not in st.session_state:
+        # The video_id filter (None = All Videos) search_results_cache was retrieved with.
+        st.session_state.search_filter_cache = None
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -687,7 +716,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
                 result = msg["result"]
 
                 # Diagnostics row
-                _render_diagnostics(result)
+                _render_diagnostics(result, msg.get("video_id_filter"))
 
                 # Sources
                 if result.sources_used:
@@ -798,20 +827,18 @@ def _render_chat_tab(ask_fn, video_filter: str):
         _render_counter(st.session_state.question_count)
 
         # Determine video_id_filter from sidebar selection
-        video_id_filter = None
-        if video_filter != "All Videos":
-            _catalogue = st.session_state.get("_video_catalogue", [])
-            _label_to_id = {label: vid_id for vid_id, label in _catalogue}
-            video_id_filter = _label_to_id.get(video_filter)
+        video_id_filter = _video_id_for_label(video_filter)
 
         # Snapshot history BEFORE appending the current user turn —
-        # these are the prior turns the generator uses for follow-up context.
-        prior_history = list(st.session_state.chat_history)
+        # these are the prior turns the generator uses for follow-up context,
+        # limited to the current video scope (see _history_for_scope).
+        prior_history = _history_for_scope(st.session_state.chat_history, video_id_filter)
 
         # Show user message immediately
         with st.chat_message("user", avatar="\U0001f9d1\u200d\U0001f393"):
             st.markdown(query)
-        st.session_state.chat_history.append({"role": "user", "content": query, "result": None})
+        st.session_state.chat_history.append({"role": "user", "content": query, "result": None,
+                                              "video_id_filter": video_id_filter})
 
         # Capture the history index this assistant turn WILL occupy once appended.
         # This ensures the Go-to-Timestamp button keys rendered here match exactly
@@ -852,7 +879,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
                 st.markdown(answer_text)
 
             # Diagnostics + sources
-            _render_diagnostics(result)
+            _render_diagnostics(result, video_id_filter)
 
             if result.sources_used:
                 with st.expander(f"\U0001f4cc {len(result.sources_used)} Source(s) Used", expanded=True):
@@ -873,6 +900,7 @@ def _render_chat_tab(ask_fn, video_filter: str):
             "role": "assistant",
             "content": answer_text if result.query_valid else (result.validation_error or ""),
             "result": result,
+            "video_id_filter": video_id_filter,
         })
         st.session_state.last_result = result
 
@@ -933,20 +961,24 @@ def _render_search_tab(search_fn, video_filter: str):
     # chat_history in Ask a Question). On reruns without an explicit search,
     # restore from cache so source cards remain visible alongside the player.
     results = None
+    video_id_filter = _video_id_for_label(video_filter)
 
-    if (search_clicked or auto_submit) and search_query:
-        video_id_filter = None
-        if video_filter != "All Videos":
-            _catalogue = st.session_state.get("_video_catalogue", [])
-            _label_to_id = {label: vid_id for vid_id, label in _catalogue}
-            video_id_filter = _label_to_id.get(video_filter)
+    # The cache belongs to the video scope it was searched in. After a sidebar
+    # change, restoring it would show another scope's evidence (e.g. All Videos
+    # results under "Tutorial #2"), so the search is re-run for the new scope.
+    scope_changed = (
+        st.session_state.get("search_results_cache") is not None
+        and st.session_state.get("search_filter_cache") != video_id_filter
+    )
 
+    if (search_clicked or auto_submit or scope_changed) and search_query:
         with st.spinner("Searching…"):
             results = search_fn(search_query, video_id_filter=video_id_filter)
 
         # Persist for cross-rerun restoration (timestamp clicks, sidebar changes, etc.)
         st.session_state.search_results_cache = results
         st.session_state.search_query_cache = search_query
+        st.session_state.search_filter_cache = video_id_filter
 
     elif st.session_state.get("search_results_cache") is not None and search_query:
         # Rerun without an explicit search action (e.g. timestamp button set
