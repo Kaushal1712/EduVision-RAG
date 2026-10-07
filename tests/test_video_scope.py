@@ -153,9 +153,6 @@ class _ScopeTestBase(unittest.TestCase):
         self.assertFalse(self.at.exception, self.at.exception)
 
     def ask(self, question: str):
-        # One plain rerun first: the UI empties the composer on the rerun after an answer
-        # (chat_composer_clear), which would otherwise discard the typed follow-up.
-        self.at.run()
         self.at.text_input(key="chat_composer").input(question)
         self.at.button(key="chat_send").click().run()
         self.assertFalse(self.at.exception, self.at.exception)
@@ -247,6 +244,69 @@ class TestChatVideoScope(_ScopeTestBase):
         call = self.ask_calls[-1]
         self.assertIsNone(call["video_id_filter"])
         self.assertEqual([h["content"] for h in call["chat_history"] if h["role"] == "user"], ["what is CSS"])
+
+
+class TestChatComposer(_ScopeTestBase):
+    """Each question is typed and submitted once (Enter or the send button).
+
+    The input is emptied by the browser after each submit (st.form clear_on_submit), which AppTest
+    does not emulate; that part is checked by asserting the form setup. What AppTest does check is
+    the server side of the bug: the next question's text is never overwritten before it is read.
+    """
+
+    def composer_form(self):
+        def walk(node):
+            proto = getattr(node, "proto", None)
+            if proto is not None and getattr(proto, "WhichOneof", None) and \
+                    "form" in proto.DESCRIPTOR.fields_by_name and proto.WhichOneof("type") == "form":
+                return proto.form
+            children = getattr(node, "children", None) or {}
+            for child in (children.values() if isinstance(children, dict) else children):
+                found = walk(child)
+                if found is not None:
+                    return found
+            return None
+        return walk(self.at._tree)
+
+    def test_composer_is_a_clear_on_submit_form(self):
+        form = self.composer_form()
+        self.assertIsNotNone(form)
+        self.assertEqual(form.form_id, "chat_composer_form")
+        self.assertTrue(form.clear_on_submit)
+        self.assertTrue(form.enter_to_submit)
+        self.assertEqual(self.at.text_input(key="chat_composer").form_id, "chat_composer_form")
+        self.assertEqual(self.at.button(key="chat_send").form_id, "chat_composer_form")
+
+    def test_consecutive_questions_each_submitted_once(self):
+        questions = ["what is html?", "what is css?", "why is it useful?"]
+        for i, q in enumerate(questions, start=1):
+            turn = self.ask(q)
+            self.assertEqual([c["query"] for c in self.ask_calls], questions[:i], f"question {i} not processed")
+            self.assertEqual(turn["role"], "assistant")
+            self.assertTrue(turn["result"].answer)
+            self.assertNotIn("chat_composer_clear", self.at.session_state)   # no deferred clear
+        history = self.at.session_state.chat_history
+        self.assertEqual([h["content"] for h in history if h["role"] == "user"], questions)
+        self.assertEqual(len(history), 6)
+        # The follow-up still got the earlier turns as context.
+        self.assertEqual([h["content"] for h in self.ask_calls[-1]["chat_history"] if h["role"] == "user"],
+                         questions[:2])
+
+    def test_empty_submit_does_nothing(self):
+        self.at.button(key="chat_send").click().run()
+        self.assertFalse(self.at.exception, self.at.exception)
+        self.assertEqual(self.ask_calls, [])
+        self.assertEqual(self.at.session_state.chat_history, [])
+
+    def test_example_button_then_typed_question(self):
+        next(b for b in self.at.button if b.key == "chat_ex_0").click().run()
+        self.at.run()   # the example sets chat_prefill and calls st.rerun()
+        self.assertFalse(self.at.exception, self.at.exception)
+        self.assertEqual([c["query"] for c in self.ask_calls], ["What is HTML and what is it used for?"])
+        self.assertEqual(self.at.text_input(key="chat_composer").value, "")   # example text not put in the input
+        self.ask("what is css?")
+        self.assertEqual([c["query"] for c in self.ask_calls],
+                         ["What is HTML and what is it used for?", "what is css?"])
 
 
 class TestSearchVideoScope(_ScopeTestBase):

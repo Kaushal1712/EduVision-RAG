@@ -98,7 +98,8 @@ st.markdown("""
     box-shadow: none !important;
 }
 /* Send / Search button inside the pill */
-[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stButton button {
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stButton button,
+[data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]) .stFormSubmitButton button {
     border-radius: 8px !important;
     padding: 4px 14px !important;
     height: 36px !important;
@@ -570,7 +571,7 @@ def _init_session():
         st.session_state.question_count = 0
     if "chat_composer" not in st.session_state:
         # Backing state for the in-flow chat text_input widget.
-        # Pre-populated here (before widget creation) when chat_prefill is set.
+        # Emptied by the composer form (clear_on_submit) after each submission.
         st.session_state.chat_composer = ""
     if "search_results_cache" not in st.session_state:
         # Stores the last list of RetrievalResult objects returned by search_fn.
@@ -760,50 +761,42 @@ def _render_chat_tab(ask_fn, video_filter: str):
     # history. We use st.text_input() + Send button in normal document flow
     # so the composer sits naturally at the bottom of the conversation.
     #
-    # State rules (both enforced pre-widget, never post-widget):
-    # 1. chat_prefill: consumed via pop() and written to chat_composer BEFORE
-    #    the widget so example buttons pre-fill the input without exception.
-    # 2. chat_composer_clear: consumed via pop() and clears chat_composer
-    #    BEFORE the widget so the field empties after a submission.
-    if st.session_state.pop("chat_composer_clear", False):
-        st.session_state.chat_composer = ""   # safe: widget not yet created
+    # The composer is a form with clear_on_submit: Enter in the input or the ➤
+    # button submits it, and Streamlit empties the input as part of that submit.
+    # An earlier version cleared chat_composer itself at the top of the *next*
+    # rerun; that rerun is the one carrying the next question, so its text was
+    # overwritten before being read and the user had to type it twice.
+    # Example buttons pass their query through chat_prefill without touching the input.
     _chat_prefill = st.session_state.pop("chat_prefill", "")
-    if _chat_prefill:
-        st.session_state.chat_composer = _chat_prefill  # safe: widget not yet created
 
     # No st.markdown wrapper div — it renders as a visible empty element
     # because Streamlit's columns() output is a sibling in the DOM tree,
     # not a child of any markdown-injected div. The unified pill look is
     # achieved via CSS :has([data-testid="stTextInput"]) on stHorizontalBlock.
-    _col_inp, _col_btn = st.columns([9, 1])
-    with _col_inp:
-        raw_input = st.text_input(
-            label="chat_composer_input",
-            placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
-            label_visibility="collapsed",
-            key="chat_composer",
-        )
-    with _col_btn:
-        send_clicked = st.button(
-            "➤",
-            key="chat_send",
-            use_container_width=True,
-            help="Send question",
-            type="primary",
-        )
+    with st.form("chat_composer_form", clear_on_submit=True, border=False):
+        _col_inp, _col_btn = st.columns([9, 1])
+        with _col_inp:
+            raw_input = st.text_input(
+                label="chat_composer_input",
+                placeholder="Ask about the course… e.g. 'How do I install VS Code?'",
+                label_visibility="collapsed",
+                key="chat_composer",
+            )
+        with _col_btn:
+            send_clicked = st.form_submit_button(
+                "➤",
+                key="chat_send",
+                use_container_width=True,
+                help="Send question",
+                type="primary",
+            )
 
-    # Resolve the query: Send button OR example-button prefill.
-    # NEVER assign st.session_state.chat_composer after this point.
+    # Resolve the query: submitted form OR example-button prefill.
     query: str = ""
     if send_clicked and raw_input.strip():
         query = raw_input.strip()
-        # Schedule the composer to clear on the next rerun (pre-widget, safe).
-        st.session_state.chat_composer_clear = True
-    elif _chat_prefill and not send_clicked:
-        # Example button: prefill was already loaded into the widget above;
-        # treat it as the submitted query and clear for next rerun.
+    elif _chat_prefill:
         query = _chat_prefill
-        st.session_state.chat_composer_clear = True
 
     if query:
         # ── Session question limit ─────────────────────────────────────────────
